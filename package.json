@@ -2,7 +2,7 @@
   "name": "trail-flyover",
   "version": "0.1.0",
   "private": true,
-  "description": "Plynulý 3D průlet nad GPS trasou (MapLibre) s exportem videa MP4/WebM",
+  "description": "Smooth 3D/2D fly-over of a GPS track for MapLibre GL, with MP4/WebM video export",
   "license": "MIT",
   "author": "Zdenek Pracny",
   "repository": {
@@ -30,7 +30,8 @@
   "files": [
     "src",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "README.cs.md"
   ],
   "engines": {
     "node": ">=22.18"

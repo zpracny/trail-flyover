@@ -1,9 +1,9 @@
-# Testovací data
+# Test data
 
-| Soubor | Obsah | Licence |
+| File | Contents | Licence |
 |---|---|---|
-| `tolmin-koper.gpx` | Vlastní záznam autora (121 km, 1 Hz). Kvůli soukromí začíná i končí kilometr od skutečného startu a cíle a datum je posunuté; časy dne jsou skutečné. | MIT, jako zbytek repozitáře |
-| `tolmin-koper.places.json` | Názvy obcí, osad a vrcholů v okolí trasy, výtah z OpenStreetMap (Overpass API). | © přispěvatelé OpenStreetMap, [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/) |
+| `tolmin-koper.gpx` | The author's own recording (121 km, 1 Hz). For privacy it starts and ends a kilometre away from the real start and finish, and its date is shifted; the times of day are real. | MIT, like the rest of the repository |
+| `tolmin-koper.places.json` | Names of towns, villages, hamlets and peaks around the track, extracted from OpenStreetMap (Overpass API). | © OpenStreetMap contributors, [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/) |
 
-Při dalším šíření souboru `tolmin-koper.places.json` je potřeba zachovat uvedení
-„© OpenStreetMap contributors“ a licenci ODbL.
+When redistributing `tolmin-koper.places.json`, keep the credit "© OpenStreetMap contributors" and
+the ODbL licence.
