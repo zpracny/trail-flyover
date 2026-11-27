@@ -24,6 +24,7 @@ import {
 } from '../hud/hud.ts';
 import { encodeVideo, type VideoFormat, type EncodedVideo } from '../export/encode.ts';
 import { registerSnowProtocol, snowTileUrl, type SnowOptions } from '../effects/snow.ts';
+import { errorText } from '../core/urls.ts';
 
 type MapLibreGL = typeof MapLibre;
 
@@ -509,7 +510,7 @@ export class TrailFlyover {
                 signal: abort.signal,
             });
         } catch (err) {
-            if (!stale()) console.warn('[TrailFlyover] DEM unavailable, using GPS elevations', err);
+            if (!stale()) console.warn('[TrailFlyover] DEM unavailable, using GPS elevations:', errorText(err));
         }
         if (stale()) return;
         // 2) final plan with ground heights for camera clearance
@@ -641,7 +642,8 @@ export class TrailFlyover {
             map.remove();
             return;
         }
-        map.on('error', e => console.warn('[TrailFlyover] map error', e.error?.message ?? e));
+        // Only the message, with URLs cut at the query string: tile URLs may carry an API key.
+        map.on('error', e => console.warn('[TrailFlyover] map error:', errorText(e.error ?? e)));
         map.on('webglcontextlost', () => this.emit('status', 'Grafická karta přerušila vykreslování, obnovuji…'));
         map.on('webglcontextrestored', () => {
             this.emit('status', '');

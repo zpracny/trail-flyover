@@ -9,6 +9,7 @@ export type { FlightPlan, FlightOptions, CameraPose, PresetId, CameraPreset, Tra
 export { parseGpx } from './core/gpx.ts';
 export type { ParsedGpx, GpxWaypoint } from './core/gpx.ts';
 export { sanitizeTrack, unwrapLongitudes } from './core/clean.ts';
+export { redactUrls } from './core/urls.ts';
 export type { TrackPoint } from './core/geo.ts';
 export { loadTerrariumSampler, expandBBox, TERRARIUM_URL } from './core/terrarium.ts';
 export { TrailFlyover } from './maplibre/player.ts';

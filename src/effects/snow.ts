@@ -10,6 +10,7 @@
  */
 import type * as MapLibre from 'maplibre-gl';
 import { TERRARIUM_URL } from '../core/terrarium.ts';
+import { redactUrls } from '../core/urls.ts';
 
 export interface SnowOptions {
     /** 0–1, how much open land turns white. Default 1. */
@@ -89,11 +90,13 @@ interface SnowParams {
 
 const demCache = new Map<string, Promise<Float32Array | null>>();
 const DEM_CACHE_MAX = 300;
+const DEM_TIMEOUT_MS = 15000;
 
 async function fetchBitmap(url: string, signal: AbortSignal): Promise<ImageBitmap> {
     const res = await fetch(url, { signal });
     // MapLibre treats a 404 as "no tile here" (quietly) when the error carries the status.
-    if (!res.ok) throw Object.assign(new Error(`Tile ${res.status}: ${url}`), { status: res.status });
+    // Without the query string: it may hold the basemap's API key.
+    if (!res.ok) throw Object.assign(new Error(`Tile ${res.status}: ${redactUrls(url)}`), { status: res.status });
     return createImageBitmap(await res.blob());
 }
 
@@ -103,7 +106,8 @@ function demTile(template: string, z: number, x: number, y: number): Promise<Flo
     if (!p) {
         p = (async () => {
             try {
-                const bmp = await fetchBitmap(template.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y)), new AbortController().signal);
+                // A stuck DEM request must not hold the tile forever: without heights it is snow everywhere.
+                const bmp = await fetchBitmap(template.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y)), AbortSignal.timeout(DEM_TIMEOUT_MS));
                 const c = new OffscreenCanvas(bmp.width, bmp.height);
                 const ctx = c.getContext('2d', { willReadFrequently: true })!;
                 ctx.drawImage(bmp, 0, 0);
@@ -130,7 +134,7 @@ export function registerSnowProtocol(ml: typeof MapLibre) {
     registered.add(ml);
     ml.addProtocol(PROTOCOL, async (params, abort) => {
         const m = /^flyover-snow:\/\/(\d+)\/(\d+)\/(\d+)\?p=(.+)$/.exec(params.url);
-        if (!m) throw new Error(`Bad snow tile URL: ${params.url}`);
+        if (!m) throw new Error(`Bad snow tile URL: ${redactUrls(params.url)}`);
         const z = Number(m[1]), x = Number(m[2]), y = Number(m[3]);
         const p: SnowParams = JSON.parse(decodeURIComponent(m[4]));
         const url = p.t.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y));

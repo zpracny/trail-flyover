@@ -5,10 +5,17 @@
  */
 import type { TrackPoint } from '../core/geo.ts';
 import type { FlyoverLabel } from '../hud/hud.ts';
+import { redactUrls } from '../core/urls.ts';
 
+/**
+ * Public Overpass servers, tried in order until one answers. Each one receives the bounding box
+ * of the track (roughly where the ride was) — pass your own `endpoints` to control that.
+ * - overpass-api.de: the main instance, run by FOSSGIS (Germany)
+ * - overpass.kumi.systems: Kumi Systems (Switzerland)
+ * - overpass.private.coffee: private.coffee (Austria)
+ */
 export const OVERPASS_ENDPOINTS = [
     'https://overpass-api.de/api/interpreter',
-    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
     'https://overpass.private.coffee/api/interpreter',
 ];
@@ -21,6 +28,7 @@ export interface PlaceLabelOptions {
     maxOffTrack?: number;
     /** Include natural=peak. Default true. */
     peaks?: boolean;
+    /** Overpass servers to ask, in order. Default OVERPASS_ENDPOINTS. */
     endpoints?: string[];
     /** Per-endpoint timeout in ms (mirrors sometimes hang). Default 12000. */
     timeoutMs?: number;
@@ -51,7 +59,7 @@ export async function fetchPlaceLabels(points: TrackPoint[], o: PlaceLabelOption
                 body: new URLSearchParams({ data: query }),
                 signal: o.signal ? AbortSignal.any([o.signal, timeout]) : timeout,
             });
-            if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+            if (!res.ok) throw new Error(`${redactUrls(url)}: HTTP ${res.status}`);
             elements = (await res.json()).elements;
             break;
         } catch (err) {
