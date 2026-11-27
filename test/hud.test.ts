@@ -296,6 +296,10 @@ test('labels: start and finish stay in the overviews and are never thinned out',
     const overview = drawn(ls, frame({ t: 19, pose: { ...frame().pose, range: 150000 } }), 9000, { detailRange: 3000 });
     assert.deepEqual(overview, { Start: 1, 'Cíl': 1 });
     assert.deepEqual(drawn(ls, frame({ t: 19 }), 9000, { hold: 3.5 }), { Start: 1, 'Cíl': 1 }, 'static camera keeps them too');
+    // The start is there from the first frame (intro overview), although the trail reaches it only
+    // at t = 1; the finish appears only when the trail gets there.
+    const intro = drawn(ls, frame({ t: 0, pose: { ...frame().pose, range: 150000 } }), 0, { detailRange: 3000, lead: 1.2 });
+    assert.deepEqual(intro, { Start: 1 });
     // Three names at the same moment: the finish wins although it is a hamlet and furthest away,
     // and like a town it takes its moment, so the villages give way.
     const burst: PlacedLabel[] = [
@@ -432,6 +436,12 @@ test('basemaps: every definition is complete and consistent', () => {
         assert.ok(['open', 'personal', 'no'].includes(b.sharing!), `${id}: sharing terms are stated`);
         assert.notEqual(b.sharing, 'no', `${id}: built-in basemaps may be exported and shared`);
         assert.ok(!b.requiresKey, `${id}: built-in basemaps work without an API key`);
+        // A colour close to the imagery, so a tile still loading looks like haze, not a bright patch.
+        assert.match(b.background ?? '', /^#[0-9a-f]{6}$/, `${id}: background colour for gaps`);
+        const lum = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)).reduce((a, c) => a + c, 0) / 3;
+        if (id.includes('satellite') || id.includes('ortofoto') || id.includes('wayback') || id === 'esri-dark') {
+            assert.ok(lum(b.background!) < 90, `${id}: dark gaps on dark imagery`);
+        } else assert.ok(lum(b.background!) > 180, `${id}: light gaps on a light map`);
         if (b.fallback) {
             assert.ok(BASEMAPS[b.fallback], `${id}: fallback ${b.fallback} exists`);
             assert.ok(!BASEMAPS[b.fallback].requiresKey && !BASEMAPS[b.fallback].fallback, `${id}: fallback needs no key and no chain`);

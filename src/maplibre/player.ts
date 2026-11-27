@@ -682,7 +682,7 @@ export class TrailFlyover {
                 'dem-hillshade': dem,
             },
             layers: [
-                { id: 'background', type: 'background', paint: { 'background-color': '#c9d3d9' } },
+                { id: 'background', type: 'background', paint: { 'background-color': this.backgroundColor() } },
                 ...this.fallbackLayer(),
                 { id: 'base', type: 'raster', source: 'base', paint: { 'raster-fade-duration': 0, ...(b.paint ?? {}) } },
             ],
@@ -764,14 +764,29 @@ export class TrailFlyover {
         // and a single failed tile (slow server, no coverage) must not fail the whole load.
         try {
             await new Promise<void>((resolve, reject) => {
-                const timer = setTimeout(() => reject(new Error('The map did not load (20 s timeout).')), 20000);
-                const done = () => { clearTimeout(timer); resolve(); };
+                // 20 s of time in which the page actually renders. MapLibre needs animation frames
+                // to load; a background tab or a covered / minimised window gets none, and failing
+                // after 20 s there broke apps whose users had switched away while the map loaded.
+                // Such time does not count: the load finishes once the page renders again.
+                let active = 0, lastFrame = 0, lastCheck = performance.now(), raf = 0;
+                const onFrame = (now: number) => { lastFrame = now; raf = requestAnimationFrame(onFrame); };
+                raf = requestAnimationFrame(onFrame);
+                const finish = () => { clearInterval(timer); cancelAnimationFrame(raf); };
+                const timer = setInterval(() => {
+                    // Destroyed meanwhile: stop waiting; the code below removes the map (a dropped load, as documented).
+                    if (this.destroyed) { finish(); resolve(); return; }
+                    const now = performance.now();
+                    if (now - lastFrame < 1500) active += now - lastCheck;
+                    lastCheck = now;
+                    if (active > 20000) { finish(); reject(new Error('The map did not load (20 s timeout).')); }
+                }, 500);
+                const done = () => { finish(); resolve(); };
                 map.once('style.load', done);
                 map.once('load', done);
                 map.on('error', e => {
                     const ev = e as unknown as { sourceId?: string; tile?: unknown; error?: Error };
                     if (ev.sourceId || ev.tile) return; // tile/source problem, the style itself is fine
-                    if (!map.isStyleLoaded()) { clearTimeout(timer); reject(ev.error ?? new Error('The map could not be created.')); }
+                    if (!map.isStyleLoaded()) { finish(); reject(ev.error ?? new Error('The map could not be created.')); }
                 });
             });
         } catch (err) {
@@ -793,10 +808,16 @@ export class TrailFlyover {
         this.applyHillshade();
     }
 
+    /** What shows through where a tile has not arrived yet (see BasemapDef.background). */
+    private backgroundColor() {
+        return this.opts.snow ? '#dfe5ea' : (this.basemap.background ?? '#c9d3d9');
+    }
+
     private swapBasemap() {
         const map = this.map;
         if (!map) return;
         const b = this.basemap;
+        if (map.getLayer('background')) map.setPaintProperty('background', 'background-color', this.backgroundColor());
         for (const id of ['base', 'base-fallback']) {
             if (map.getLayer(id)) map.removeLayer(id);
             if (map.getSource(id)) map.removeSource(id);

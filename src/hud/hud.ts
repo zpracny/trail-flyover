@@ -312,7 +312,9 @@ export function drawLabels(
         // A quick fade-in that starts as the tip arrives (or `lead` seconds earlier); the starting
         // place is there from frame one.
         const lead = l.t !== undefined ? Math.max(0, o.lead ?? 0) : 0;
-        const reveal = l.t !== undefined && l.t <= 0 ? 1 : smoothstep((age + lead + 0.1) / 0.45);
+        // The place the ride starts in is there from the first frame (intro overview), even when it
+        // lies a little off the first point and the trail passes it only later.
+        const reveal = (l.t !== undefined && l.t <= 0) || l.endpoint === 'start' ? 1 : smoothstep((age + lead + 0.1) / 0.45);
         if (reveal <= 0.01) continue;
         const own = l.priority ?? KIND_PRIORITY[l.kind ?? ''] ?? 2;
         // Start and finish rank with the landmarks, whatever their kind.

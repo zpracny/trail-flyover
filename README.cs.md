@@ -41,12 +41,12 @@ Balíček zatím není na npm. Instaluje se vydaná verze z GitHubu, `maplibre-g
 dodává aplikace:
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.0/trail-flyover-0.5.0.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.1/trail-flyover-0.5.1.tgz maplibre-gl
 ```
 
 Je to hotový přeložený balíček (ES moduly s typovými deklaracemi v `dist/`), v lockfile připnutý
 kontrolním součtem. Funguje i instalace přímo z gitu
-(`npm install github:zpracny/trail-flyover#v0.5.0`); npm pak balíček při instalaci sestaví.
+(`npm install github:zpracny/trail-flyover#v0.5.1`); npm pak balíček při instalaci sestaví.
 Na sestavovacích serverech je lepší balíček z vydání: instalaci z gitu npm zapíše jako
 `git+ssh://`, a ta tam potřebuje SSH klíč.
 
@@ -149,6 +149,9 @@ Přehrávač počítá s tím, že ho aplikace volá rychle za sebou (posuvníky
 - Během exportu a přednačítání ukazuje přehrávač stojící obraz z okamžiku spuštění: mapa pod ním
   skáče ze snímku na snímek a čeká na dlaždice, což by vypadalo trhaně. `stillWhileBusy: false`
   ukáže práci naživo.
+- Stránka, která se nevykresluje (karta na pozadí, zakryté nebo minimalizované okno), nedostává
+  snímky animace a bez nich MapLibre nenačte. `load()` pak čeká místo chyby: jeho limit 20 s počítá
+  jen dobu, kdy se stránka vykresluje.
 - `prefetch()` je pro plynulé **přehrávání**. Export ho nepotřebuje: na každou dlaždici každého
   snímku stejně počká.
 - `destroy()` jde zavolat kdykoli, i uprostřed načítání nebo exportu. Rozpracované načítání se
@@ -432,7 +435,9 @@ použít i bez přehrávače, třeba pro animaci trasy v interaktivní mapě NaB
 pro 2D Story v TrailMetrics, který kreslí do canvasu.
 
 Vlastní podklad je obyčejný objekt `BasemapDef` (URL dlaždic, atribuce, úpravy barev). Atribuci
-kreslí HUD i do videa.
+kreslí HUD i do videa. `background` je barva tam, kam dlaždice ještě nedorazila (rychlý průlet
+v náhledu); má být blízko barvě podkladu (u satelitu tmavá), aby mezera vypadala jako opar, ne
+jako světlá skvrna.
 Terén je vždy AWS Terrain Tiles (Terrarium, zdarma).
 
 ## Vstupní data
