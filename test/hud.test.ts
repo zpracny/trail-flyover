@@ -545,3 +545,13 @@ test('labels: own colour and icon per label; label-free bands follow the app\'s 
     assert.deepEqual(Object.keys(drawn(high, frame(), 5000)), ['Nahoře']);
     assert.deepEqual(Object.keys(drawn(high, frame(), 5000, { bands: { top: 0.2 } })), []);
 });
+
+test('labels: 32 px bold by default (readable on a phone), `size` scales the pill', () => {
+    const fonts = (size?: number) => {
+        const { ctx, calls } = fakeCtx();
+        drawLabels(ctx, [label('Zdaboř', 14, 49)], frame(), 5000, size === undefined ? {} : { size });
+        return calls.filter(c => c[0] === 'set:font').map(c => c[1] as string);
+    };
+    assert.match(fonts()[0], /^700 32px /);
+    assert.match(fonts(1.25)[0], /^700 40px /);
+});

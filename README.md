@@ -54,12 +54,12 @@ The package is not on npm yet. Install a released version from GitHub; the app p
 `maplibre-gl` (5 or newer):
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.1/trail-flyover-0.5.1.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.2/trail-flyover-0.5.2.tgz maplibre-gl
 ```
 
 That is a ready-built package (ES modules with type declarations in `dist/`), pinned by a
 checksum in your lockfile. Installing straight from git also works
-(`npm install github:zpracny/trail-flyover#v0.5.1`); npm then builds the package on install.
+(`npm install github:zpracny/trail-flyover#v0.5.2`); npm then builds the package on install.
 Prefer the tarball on build servers: npm records a git install as `git+ssh://`, which needs an
 SSH key there.
 
@@ -259,6 +259,8 @@ each one appears as the tip of the trail approaches it.
   out of the bottom of the picture), so a name is read while the place is still ahead. Measured on
   the Tolmin–Koper track, 20 s video with a tall bottom panel: every name readable for at least
   1.2 s (median 1.6 s), before only 0.4 s (median). `0` = appear exactly as the trail arrives.
+- **Size** (`labelSize`, default 1): names are 32 px bold at 1080 px output width. A 1080 px wide
+  video on a phone screen is shown about 2.8× smaller, which brings that down to ~11 pt.
 
 - **Reach by kind of place** (`labelReach`, default `LABEL_REACH`): a town within 1,000 m (the
   point of a town is its centre and the track may pass along its edge), a village 400 m, a hamlet

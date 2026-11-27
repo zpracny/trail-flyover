@@ -41,12 +41,12 @@ Balíček zatím není na npm. Instaluje se vydaná verze z GitHubu, `maplibre-g
 dodává aplikace:
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.1/trail-flyover-0.5.1.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.2/trail-flyover-0.5.2.tgz maplibre-gl
 ```
 
 Je to hotový přeložený balíček (ES moduly s typovými deklaracemi v `dist/`), v lockfile připnutý
 kontrolním součtem. Funguje i instalace přímo z gitu
-(`npm install github:zpracny/trail-flyover#v0.5.1`); npm pak balíček při instalaci sestaví.
+(`npm install github:zpracny/trail-flyover#v0.5.2`); npm pak balíček při instalaci sestaví.
 Na sestavovacích serverech je lepší balíček z vydání: instalaci z gitu npm zapíše jako
 `git+ssh://`, a ta tam potřebuje SSH klíč.
 
@@ -302,6 +302,8 @@ a každé se objeví, když se k němu čelo trasy blíží.
   spodem obrazu), takže název se čte, dokud je místo ještě před ní. Na trase Tolmin–Koper
   (20s video, vysoký spodní panel) je teď každý název čitelný aspoň 1,2 s (medián 1,6 s),
   dřív medián 0,4 s. `0` = objeví se přesně ve chvíli příjezdu.
+- **Velikost** (`labelSize`, výchozí 1): názvy mají 32 px tučně při šířce videa 1080 px. Video
+  široké 1080 px se na telefonu zobrazí asi 2,8× menší, tedy zhruba 11 pt.
 
 - **Dosah podle druhu místa** (`labelReach`, výchozí `LABEL_REACH`): město do 1 000 m (bod města
   je jeho střed a trasa ho může míjet po okraji), vesnice 400 m, samota 250 m, vrchol 250 m,

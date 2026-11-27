@@ -70,6 +70,9 @@ export interface PlacedLabel extends FlyoverLabel {
     endpoint?: 'start' | 'end';
 }
 
+/** Label text size (px) at 1080 px output width. */
+const LABEL_FONT = 32;
+
 const KIND_PRIORITY: Record<string, number> = { city: 5, town: 4, waypoint: 4, peak: 3, village: 3, hamlet: 1, locality: 1 };
 
 /** How close (m) the track must come to a place for its name to be shown: one number, or per `kind`. */
@@ -287,6 +290,12 @@ export interface LabelDrawOptions {
      * middle of the picture. Default 0.
      */
     lead?: number;
+    /**
+     * Size of the pills relative to the default (32 px bold text at 1080 px output width).
+     * A 1080 px video shown on a phone shrinks about 2.8×, so smaller text gets hard to read.
+     * Default 1.
+     */
+    size?: number;
 }
 
 /**
@@ -337,15 +346,15 @@ export function drawLabels(
     candidates.sort((x, y) => y.pr - x.pr || x.l.s - y.l.s);
 
     const boxes: Array<[number, number, number, number, number]> = [];
-    const fontSize = Math.round(26 * s);
+    const fontSize = Math.round(LABEL_FONT * s * (o.size ?? 1));
     ctx.save();
-    ctx.font = `600 ${fontSize}px ${FONT}`;
+    ctx.font = `700 ${fontSize}px ${FONT}`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
     let budget = o.maxLabels ?? 6;
     for (const c of candidates) {
         if (budget <= 0.02) break;
-        const padX = 16 * s, h = fontSize + 18 * s, stem = 22 * s;
+        const padX = fontSize * 0.6, h = fontSize * 1.65, stem = 22 * s;
         const text = c.l.icon ? `${c.l.icon} ${c.l.name}` : c.l.name;
         const w = ctx.measureText(text).width + padX * 2;
         // The pill stays fully inside the picture; near an edge it slides sideways and the stem

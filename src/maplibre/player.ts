@@ -80,6 +80,11 @@ export interface TrailFlyoverOptions {
      * with a tall bottom panel; 0 = appear exactly as the trail arrives.
      */
     labelLead?: number;
+    /**
+     * Size of the place-name pills relative to the default (32 px bold text at 1080 px output
+     * width, readable when the video plays on a phone). Default 1.
+     */
+    labelSize?: number;
     endpointRadius?: number;
     colors?: { trail?: string; casing?: string; ghost?: string; accent?: string };
     /** Show the remaining route faintly ahead of the tip. Default true. */
@@ -1104,8 +1109,8 @@ export class TrailFlyover {
         // while, towns stay as landmarks. A flying camera shows small places only at flight distance,
         // not in the overview shots at both ends.
         drawLabels(ctx, this.labels, frame, tipS, plan.meta.camera === 'static'
-            ? { maxLabels: 12, hold: 3.5, bands }
-            : { detailRange: plan.meta.range, bands, lead: this.opts.labelLead ?? 1.2 });
+            ? { maxLabels: 12, hold: 3.5, bands, size: this.opts.labelSize }
+            : { detailRange: plan.meta.range, bands, lead: this.opts.labelLead ?? 1.2, size: this.opts.labelSize });
         if (tip) drawTip(ctx, tip, scale, c.accent);
         if (this.opts.hud !== false) (this.opts.hud ?? drawDefaultHud)(ctx, frame);
     }
