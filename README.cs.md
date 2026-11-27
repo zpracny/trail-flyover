@@ -145,6 +145,11 @@ Přehrávač počítá s tím, že ho aplikace volá rychle za sebou (posuvníky
   skončí chybou a nic nezmění.
 - Během exportu a přednačítání `load()`, `update()` a další export skončí chybou „An export or prefetch is in progress…“.
   `seek()` a `play()` se v té době ignorují.
+- Během exportu a přednačítání ukazuje přehrávač stojící obraz z okamžiku spuštění: mapa pod ním
+  skáče ze snímku na snímek a čeká na dlaždice, což by vypadalo trhaně. `stillWhileBusy: false`
+  ukáže práci naživo.
+- `prefetch()` je pro plynulé **přehrávání**. Export ho nepotřebuje: na každou dlaždici každého
+  snímku stejně počká.
 - `destroy()` jde zavolat kdykoli, i uprostřed načítání nebo exportu. Rozpracované načítání se
   zahodí a nevznikne žádná mapa navíc; export skončí chybou `AbortError`.
 - Nedostupná nebo chybějící dlaždice nezpůsobí chybu `load()`. Mapa se dokreslí, jakmile dlaždice

@@ -60,12 +60,20 @@ export async function encodeVideo(o: EncodeOptions): Promise<EncodedVideo> {
     await output.start();
 
     try {
+        // add() captures the canvas at once and encodes in the background, so the next frame is
+        // drawn while the previous one is being encoded. Waiting for the previous add() before
+        // the next one keeps the encoder's backpressure (at most one frame in flight).
+        let pending: Promise<void> | null = null;
         for (let i = 0; i < o.frameCount; i++) {
             if (o.signal?.aborted) throw new DOMException('Export cancelled', 'AbortError');
             await o.drawFrame(i, ctx);
-            await source.add(i / o.fps, 1 / o.fps);
+            await pending;
+            const added = source.add(i / o.fps, 1 / o.fps);
+            added.catch(() => {}); // surfaced by the await above or below, never unhandled
+            pending = added;
             o.onProgress?.((i + 1) / o.frameCount);
         }
+        await pending;
         await output.finalize();
     } catch (err) {
         if (output.state !== 'finalized' && output.state !== 'canceled') await output.cancel().catch(() => {});
