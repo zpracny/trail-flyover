@@ -88,11 +88,66 @@ test('GPX: namespace prefixes, comments, extensions and waypoints', () => {
 });
 
 test('GPX: garbage in → empty result, never an exception', () => {
-    for (const text of ['', 'not xml at all', '<gpx>', '<gpx><trk><trkseg><trkpt lat="1"', '{"json": true}', '<html><body>404</body></html>']) {
+    for (const text of ['', 'not xml at all', '<gpx>', '<gpx><trk><trkseg><trkpt lat="1"', '{"json": true}', '<html><body>404</body></html>',
+        '<gpx><trk><name>&#99999999;', '<![CDATA[', '<!--', '<', '</trk></gpx>', '<?xml?><!DOCTYPE x [<!ENTITY a "b">]><gpx/>']) {
         const g = parseGpx(text);
         assert.deepEqual(g.points, [], JSON.stringify(text));
         assert.equal(g.name, null);
     }
+});
+
+test('GPX: hostile input cannot freeze the page — parsing time grows linearly', () => {
+    // Unclosed or deeply nested tags used to make the regex-based parser quadratic
+    // (a 400 kB file of unclosed <trk> took about a minute).
+    const inputs: Record<string, (n: number) => string> = {
+        'unclosed <trkpt>': n => '<gpx><trk><trkseg>' + '<trkpt lat="49" lon="14">'.repeat(n),
+        'unclosed <trk>': n => '<gpx>' + '<trk>'.repeat(n),
+        'unclosed comments': n => '<gpx>' + '<!-- x '.repeat(n),
+        'unclosed <name>': n => '<gpx><trk>' + '<name>x'.repeat(n),
+        'nested tags, stray closing tags': n => '<gpx>' + '<a>'.repeat(n) + '</b>'.repeat(n),
+        'no closing bracket': n => '<gpx>' + '<trkpt lat="1" lon="1"'.repeat(n),
+        'entities': n => '<gpx><trk><name>' + '&amp;&#xFFFFFFFF;'.repeat(n) + '</name></trk></gpx>',
+    };
+    const ms = (text: string) => {
+        let best = Infinity;
+        for (let k = 0; k < 3; k++) {
+            const t0 = performance.now();
+            parseGpx(text);
+            best = Math.min(best, performance.now() - t0);
+        }
+        return best;
+    };
+    for (const [name, make] of Object.entries(inputs)) {
+        const small = ms(make(10000)), big = ms(make(80000));
+        assert.ok(big < 400, `${name}: ${big.toFixed(0)} ms for 80 000 repetitions`);
+        // 8× the input may cost ~8× the time, not 64× (generous margin for timer noise).
+        assert.ok(big < Math.max(25, small * 20), `${name}: ${small.toFixed(1)} → ${big.toFixed(1)} ms`);
+    }
+});
+
+test('GPX: broken files keep what can be read — unclosed points, impossible character references', () => {
+    // A point whose closing tag is missing is followed by the next one: both are kept.
+    const body = `<trk><trkseg>
+        <trkpt lat="1" lon="1"><ele>10</ele>
+        <trkpt lat="2" lon="2"><ele>20</ele></trkpt>
+        <trkpt lat="3" lon="3"><ele>30</ele>`;
+    // Closing </gpx> closes the open point too.
+    assert.deepEqual(parseGpx(wrap(body)).points.map(p => [p.lat, p.ele]), [[1, 10], [2, 20], [3, 30]]);
+    // A file cut off in the middle of a point: that point is incomplete and dropped.
+    assert.deepEqual(parseGpx(body).points.map(p => [p.lat, p.ele]), [[1, 10], [2, 20]]);
+    // Character references beyond Unicode or into the surrogate range become U+FFFD instead of throwing.
+    for (const ref of ['&#99999999;', '&#x110000;', '&#xD800;', '&#55296;', '&#xFFFFFFFF;']) {
+        const n = parseGpx(wrap(`<trk><name>A${ref}B</name><trkseg><trkpt lat="1" lon="1"/></trkseg></trk>`));
+        assert.equal(n.name, 'A�B', ref);
+    }
+    assert.deepEqual(parseGpx(wrap(`<wpt lat="1" lon="2"><name>&#x1F3D4;&#127956;</name></wpt>`)).waypoints[0].name, '🏔🏔');
+    // Only direct children of a point count: an <ele> inside extensions does not override the real one.
+    const ext = parseGpx(wrap(`<trk><trkseg><trkpt lat="1" lon="1"><extensions><x:ele>999</x:ele></extensions><ele>5</ele></trkpt></trkseg></trk>`));
+    assert.equal(ext.points[0].ele, 5);
+    // Upper-case tags, CDATA in a point, a '>' inside text.
+    const odd = parseGpx(wrap(`<TRK><NAME>a &gt; b</NAME><TRKSEG><TRKPT LAT="1" LON="1"><ELE><![CDATA[ 7 ]]></ELE></TRKPT></TRKSEG></TRK>`));
+    assert.equal(odd.name, 'a > b');
+    assert.equal(odd.points[0].ele, 7);
 });
 
 test('GPX: a 26 000-point file parses in well under a second', () => {
