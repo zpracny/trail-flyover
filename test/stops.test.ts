@@ -237,3 +237,20 @@ test('language: English by default, Czech built in, single texts can be overridd
     assert.deepEqual(Object.keys(STRINGS.cs).sort(), Object.keys(STRINGS.en).sort(), 'both languages have every text');
     for (const lang of Object.values(STRINGS)) for (const [k, v] of Object.entries(lang)) assert.ok(typeof v === 'string' && v.length > 0, k);
 });
+
+test('rangeScale: a camera-height control that still adapts to track and duration', () => {
+    const range = (o: FlightOptions) => buildFlightPlan(TOLMIN_KOPER, { duration: 60, aspect: 0.8, ...o }).meta.range;
+    const base = range({});
+    // Not exactly ×2: a different distance also changes how long the overview shots take.
+    assert.ok(Math.abs(range({ rangeScale: 2 }) / base - 2) < 0.3, `×2 gives ×${(range({ rangeScale: 2 }) / base).toFixed(2)}`);
+    assert.ok(Math.abs(range({ rangeScale: 0.5 }) / base - 0.5) < 0.08, `×0.5 gives ×${(range({ rangeScale: 0.5 }) / base).toFixed(2)}`);
+    assert.equal(range({ rangeScale: 1 }), base);
+    for (const bad of [0, -1, NaN, Infinity]) assert.equal(range({ rangeScale: bad }), base, `${bad} is ignored`);
+    assert.equal(range({ range: 5000, rangeScale: 3 }), 5000, 'an explicit range wins');
+    // Still within the planner's limits, and the flight stays smooth when closer or further.
+    assert.ok(range({ rangeScale: 100 }) <= 30000 && range({ rangeScale: 0.001 }) >= 350);
+    for (const rangeScale of [0.4, 2.5]) {
+        const m = smoothness(buildFlightPlan(SOCA_VALLEY, { duration: 30, aspect: 0.8, rangeScale }));
+        assert.ok(m.pan < 1 && m.zoom < 0.75 && m.follow < 1, `×${rangeScale}: ${JSON.stringify(m)}`);
+    }
+});

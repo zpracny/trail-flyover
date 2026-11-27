@@ -27,7 +27,7 @@ npm run build:lib                   # balíček pro aplikace: dist/ (JavaScript 
 npm run compare                     # srovnání plynulosti se současnou kamerou TrailMetrics
 ```
 
-Testy: 98 testů za ~10 s na skutečném záznamu 121 km, jeho 46km úseku a na umělých i náhodných
+Testy: 99 testů za ~10 s na skutečném záznamu 121 km, jeho 46km úseku a na umělých i náhodných
 trasách. Stejnou kontrolu spouští GitHub Actions u každého pushe.
 
 ## Instalace do aplikace
@@ -36,12 +36,12 @@ Balíček zatím není na npm. Instaluje se vydaná verze z GitHubu, `maplibre-g
 dodává aplikace:
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.2.0/trail-flyover-0.2.0.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.2.1/trail-flyover-0.2.1.tgz maplibre-gl
 ```
 
 Je to hotový přeložený balíček (ES moduly s typovými deklaracemi v `dist/`), v lockfile připnutý
 kontrolním součtem. Funguje i instalace přímo z gitu
-(`npm install github:zpracny/trail-flyover#v0.2.0`); npm pak balíček při instalaci sestaví.
+(`npm install github:zpracny/trail-flyover#v0.2.1`); npm pak balíček při instalaci sestaví.
 Na sestavovacích serverech je lepší balíček z vydání: instalaci z gitu npm zapíše jako
 `git+ssh://`, a ta tam potřebuje SSH klíč.
 

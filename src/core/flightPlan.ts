@@ -69,6 +69,11 @@ export interface FlightOptions {
     pitch?: number;
     /** Overrides the automatic camera distance in metres. */
     range?: number;
+    /**
+     * Multiplies the automatic camera distance: 0.5 = twice as close, 2 = twice as far. For a
+     * "camera height" slider that keeps adapting to the track length and video duration.
+     */
+    rangeScale?: number;
     /** Terrain exaggeration used by the renderer (camera altitude must match). */
     exaggeration?: number;
     /** DEM sampler. Without it the GPX elevations are used. */
@@ -399,7 +404,8 @@ export function buildFlightPlan(input: TrackPoint[], opts: FlightOptions = {}): 
             }
             v = hi;
         }
-        const range = opts.range ?? clamp((v / preset.screenRate) * narrow, 350, 30000);
+        const scale = Number.isFinite(opts.rangeScale) && (opts.rangeScale as number) > 0 ? (opts.rangeScale as number) : 1;
+        const range = opts.range ?? clamp((v / preset.screenRate) * narrow * scale, 350, 30000);
         return { intro, outro, follow, ramp, v, range };
     };
     // Very short videos (under 8 s) get proportionally shorter overview shots.

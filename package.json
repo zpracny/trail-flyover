@@ -1,6 +1,6 @@
 {
   "name": "trail-flyover",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Smooth 3D/2D fly-over of a GPS track for MapLibre GL, with MP4/WebM video export",
   "license": "MIT",
