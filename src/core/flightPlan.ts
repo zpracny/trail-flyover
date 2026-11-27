@@ -72,6 +72,8 @@ export interface FlightOptions {
     /**
      * Multiplies the automatic camera distance: 0.5 = twice as close, 2 = twice as far. For a
      * "camera height" slider that keeps adapting to the track length and video duration.
+     * Closer means more motion on screen at the same ground speed: below about 0.6 the flight
+     * gets noticeably livelier.
      */
     rangeScale?: number;
     /** Terrain exaggeration used by the renderer (camera altitude must match). */
