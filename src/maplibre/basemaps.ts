@@ -34,7 +34,7 @@ export interface BasemapDef {
 export const BASEMAPS: Record<string, BasemapDef> = {
     'esri-satellite': {
         id: 'esri-satellite',
-        label: 'Satelit (Esri)',
+        label: 'Satellite (Esri)',
         tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
         tileSize: 256,
         maxzoom: 19,
@@ -43,11 +43,11 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         paint: { 'raster-saturation': -0.1, 'raster-contrast': 0.08 },
         sharing: 'personal',
         hillshade: 0,
-        coverage: 'celý svět',
+        coverage: 'worldwide',
     },
     'esri-wayback-2022': {
         id: 'esri-wayback-2022',
-        label: 'Satelit Esri – archiv 2022 (místy zima)',
+        label: 'Satellite, Esri archive 2022 (winter in places)',
         // Esri World Imagery Wayback release 2022-04-06: winter capture over parts of Šumava (e.g. Špičák).
         tiles: ['https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/48232/{z}/{y}/{x}'],
         tileSize: 256,
@@ -55,11 +55,11 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         attribution: '© Esri World Imagery Wayback (2022), Maxar, Earthstar Geographics',
         sharing: 'personal',
         hillshade: 0,
-        coverage: 'celý svět; sníh jen místy (Šumava – Špičák, Železná Ruda)',
+        coverage: 'worldwide; snow only in places (Šumava: Špičák, Železná Ruda)',
     },
     'cuzk-ortofoto': {
         id: 'cuzk-ortofoto',
-        label: 'Ortofoto ČR (ČÚZK)',
+        label: 'Orthophoto of Czechia (ČÚZK)',
         tiles: ['https://ags.cuzk.gov.cz/arcgis1/rest/services/ORTOFOTO_WM/MapServer/tile/{z}/{y}/{x}'],
         tileSize: 256,
         maxzoom: 20,
@@ -67,12 +67,12 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         paint: { 'raster-saturation': -0.05 },
         sharing: 'open',
         hillshade: 0,
-        coverage: 'Česko (nejostřejší detail), za hranicí Esri',
+        coverage: 'Czechia (the sharpest detail), Esri beyond the border',
         fallback: 'esri-satellite',
     },
     'esri-satellite-bw': {
         id: 'esri-satellite-bw',
-        label: 'Satelit černobílý (Esri)',
+        label: 'Satellite, black and white (Esri)',
         tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
         tileSize: 256,
         maxzoom: 19,
@@ -82,59 +82,59 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         paint: { 'raster-saturation': -1, 'raster-contrast': 0.18, 'raster-brightness-max': 0.92 },
         sharing: 'personal',
         hillshade: 0,
-        coverage: 'celý svět',
+        coverage: 'worldwide',
     },
     'opentopomap': {
         id: 'opentopomap',
-        label: 'Turistická (OpenTopoMap)',
+        label: 'Topographic (OpenTopoMap)',
         tiles: ['https://a.tile.opentopomap.org/{z}/{x}/{y}.png', 'https://b.tile.opentopomap.org/{z}/{x}/{y}.png', 'https://c.tile.opentopomap.org/{z}/{x}/{y}.png'],
         tileSize: 256,
         maxzoom: 17,
         attribution: '© OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA)',
         sharing: 'open',
         hillshade: 0.25,
-        coverage: 'celý svět; pomalý server (dlaždice i několik sekund)',
+        coverage: 'worldwide; slow server (a tile can take seconds)',
     },
     'esri-topo': {
         id: 'esri-topo',
-        label: 'Turistická (Esri Topo)',
+        label: 'Topographic (Esri Topo)',
         tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}'],
         tileSize: 256,
         maxzoom: 19,
         attribution: 'Sources: Esri, HERE, Garmin, Intermap, increment P Corp., GEBCO, USGS, FAO, NPS, NRCAN, GeoBase, IGN, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), © OpenStreetMap contributors, GIS User Community',
         sharing: 'personal',
         hillshade: 0.15,
-        coverage: 'celý svět, rychlý server',
+        coverage: 'worldwide, fast server',
     },
     'esri-light': {
         id: 'esri-light',
-        label: 'Světlá šedá (Esri)',
+        label: 'Light grey (Esri)',
         tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'],
         tileSize: 256,
         maxzoom: 16,
         attribution: '© Esri, HERE, Garmin, © OpenStreetMap contributors, GIS User Community',
         sharing: 'personal',
         hillshade: 0.45,
-        coverage: 'celý svět; černobílá mapa bez popisků, terén jen stínováním',
+        coverage: 'worldwide; black-and-white map without labels, terrain as hillshade',
     },
     'esri-dark': {
         id: 'esri-dark',
-        label: 'Tmavá (Esri)',
+        label: 'Dark (Esri)',
         tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'],
         tileSize: 256,
         maxzoom: 16,
         attribution: '© Esri, HERE, Garmin, © OpenStreetMap contributors, GIS User Community',
         sharing: 'personal',
         hillshade: 0.55,
-        coverage: 'celý svět',
+        coverage: 'worldwide',
     },
 };
 
 export function resolveBasemap(b: string | BasemapDef, apiKeys: Record<string, string | undefined> = {}): BasemapDef {
     const def = typeof b === 'string' ? BASEMAPS[b] : b;
-    if (!def) throw new Error(`Neznámý mapový podklad: ${String(b)}`);
+    if (!def) throw new Error(`Unknown basemap: ${String(b)}`);
     if (!def.requiresKey) return def;
     const key = apiKeys[def.requiresKey];
-    if (!key) throw new Error(`Podklad „${def.label}“ potřebuje API klíč (${def.requiresKey}).`);
+    if (!key) throw new Error(`Basemap "${def.label}" needs an API key (apiKeys.${def.requiresKey}).`);
     return { ...def, tiles: def.tiles.map(t => t.replace('{apikey}', encodeURIComponent(key))) };
 }

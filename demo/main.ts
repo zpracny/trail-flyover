@@ -1,7 +1,7 @@
 import * as maplibregl from 'maplibre-gl';
 import {
-    TrailFlyover, parseGpx, BASEMAPS, LABEL_REACH, fetchPlaceLabels, formatDistance,
-    type TrackPoint, type FlyoverLabel, type PresetId, type VideoFormat,
+    TrailFlyover, parseGpx, BASEMAPS, LABEL_REACH, fetchPlaceLabels, formatDistance, drawDefaultHud,
+    type TrackPoint, type FlyoverLabel, type PresetId, type VideoFormat, type HudFrame, type FlightStop,
 } from '../src/index.ts';
 
 const OUTPUTS = {
@@ -27,6 +27,8 @@ const state = {
     duration: 0,
     exaggeration: 1.4,
     labelsOn: true,
+    profile: false,
+    stops: false,
     ghost: true,
     points: [] as TrackPoint[],
     name: '',
@@ -64,7 +66,7 @@ async function apply(patch: Parameters<TrailFlyover['update']>[0]) {
         await fly?.update(patch);
         renderMeta();
     } catch (err) {
-        status(`Chyba: ${(err as Error).message}`);
+        status(`Error: ${(err as Error).message}`);
     }
 }
 
@@ -72,8 +74,61 @@ function snowOptions() {
     return state.snow ? { snowline: state.snowline || null } : false;
 }
 
+/** Demo stops: three places, a quarter, a half and three quarters of the way, 3 s each. */
+function demoStops(): FlightStop[] {
+    if (!state.stops) return [];
+    // Track length from the raw points (the plan may not exist yet when the player is created).
+    let total = 0;
+    for (let i = 1; i < state.points.length; i++) {
+        const a = state.points[i - 1], b = state.points[i];
+        total += Math.hypot((b.lon - a.lon) * 111320 * Math.cos((a.lat * Math.PI) / 180), (b.lat - a.lat) * 111320);
+    }
+    return [0.25, 0.5, 0.75].map((f, i) => ({ distance: total * f, duration: 3, data: `Stop ${i + 1} of 3` }));
+}
+
 function flightOptions() {
-    return { preset: state.preset, duration: state.duration || undefined, camera: state.camera };
+    return { preset: state.preset, duration: state.duration || undefined, camera: state.camera, stops: demoStops() };
+}
+
+/**
+ * The demo's overlay: the built-in panel plus a card while the flight stands at a stop. An app
+ * would draw its photo here; `f.stop` says which stop it is and how far through it we are.
+ */
+function demoHud(ctx: CanvasRenderingContext2D, f: HudFrame) {
+    drawDefaultHud(ctx, f);
+    const stop = f.stop;
+    if (!stop) return;
+    // Fade in over the first 0.5 s and out over the last 0.5 s of the stop.
+    const alpha = Math.min(1, stop.elapsed / 0.5, stop.remaining / 0.5);
+    const s = f.scale, w = Math.min(f.width - 120 * s, 720 * s), h = 300 * s;
+    const x = (f.width - w) / 2, y = f.height * 0.36 - h / 2 + (1 - alpha) * 16 * s;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 30 * s;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 22 * s);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#e9ecf1';
+    ctx.beginPath();
+    ctx.roundRect(x + 18 * s, y + 18 * s, w - 36 * s, h - 96 * s, 12 * s);
+    ctx.fill();
+    ctx.fillStyle = '#8a93a3';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `500 ${Math.round(26 * s)}px system-ui, sans-serif`;
+    ctx.fillText('your photo here', f.width / 2, y + 18 * s + (h - 96 * s) / 2);
+    ctx.fillStyle = '#14171c';
+    ctx.textAlign = 'left';
+    ctx.font = `700 ${Math.round(30 * s)}px system-ui, sans-serif`;
+    ctx.fillText(String(stop.stop.data), x + 24 * s, y + h - 40 * s);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#5b6474';
+    ctx.font = `500 ${Math.round(26 * s)}px system-ui, sans-serif`;
+    ctx.fillText(formatDistance(stop.stop.distance), x + w - 24 * s, y + h - 40 * s);
+    ctx.restore();
 }
 
 function labelReach() {
@@ -85,13 +140,13 @@ function renderMeta() {
     if (!plan) return;
     const m = plan.meta;
     const rows: Array<[string, string, string?]> = [
-        ['Délka trasy', formatDistance(plan.length)],
-        ['Video', `${plan.duration.toFixed(1)} s (úvod ${m.intro.toFixed(1)} s, závěr ${m.outro.toFixed(1)} s)`],
-        ['Kamera', `${m.camera === 'static' ? 'stojí, ' : ''}${(m.range / 1000).toFixed(1)} km od cíle, náklon ${Math.round(m.pitch)}°`],
-        ['Rychlost', `${Math.round(m.followSpeed * 3.6).toLocaleString('cs-CZ')} km/h nad terénem`],
-        ['Názvy míst', `${fly!.labelCount} na trase`],
-        ['Výstup', `${fly!.output.width}×${fly!.output.height}`],
-        ['Plynulost', '— (přehraj)', 'fps'],
+        ['Track length', formatDistance(plan.length)],
+        ['Video', `${plan.duration.toFixed(1)} s (intro ${m.intro.toFixed(1)} s, outro ${m.outro.toFixed(1)} s${plan.stops.length ? `, ${plan.stops.length} stops` : ''})`],
+        ['Camera', `${m.camera === 'static' ? 'static, ' : ''}${(m.range / 1000).toFixed(1)} km from the target, pitch ${Math.round(m.pitch)}°`],
+        ['Speed', `${Math.round(m.followSpeed * 3.6).toLocaleString('en-US')} km/h over the ground`],
+        ['Place names', `${fly!.labelCount} on the route`],
+        ['Output', `${fly!.output.width}×${fly!.output.height}`],
+        ['Smoothness', '— (press play)', 'fps'],
     ];
     // Built as elements with textContent: nothing here is ever parsed as HTML.
     $('meta').replaceChildren(...rows.flatMap(([k, v, id]) => {
@@ -119,7 +174,7 @@ function reportPacing() {
     const avg = d.reduce((a, b) => a + b, 0) / d.length;
     const p95 = sorted[Math.floor(d.length * 0.95)];
     const long = d.filter(x => x > 25).length;
-    const text = `${(1000 / avg).toFixed(0)} fps · p95 ${p95.toFixed(1)} ms · záseky ${long}/${d.length}`;
+    const text = `${(1000 / avg).toFixed(0)} fps · p95 ${p95.toFixed(1)} ms · long frames ${long}/${d.length}`;
     const el = document.getElementById('fps');
     if (el) el.textContent = text;
     (window as unknown as { __pacing: unknown }).__pacing = { avgFps: 1000 / avg, p95, long, frames: d.length };
@@ -131,7 +186,7 @@ async function createPlayer() {
     abort?.abort();
     fly?.destroy();
     stage.replaceChildren();
-    status('Připravuji…', 0);
+    status('Preparing…', 0);
     const player = new TrailFlyover(stage, {
         maplibregl,
         output: OUTPUTS[state.aspect],
@@ -140,6 +195,8 @@ async function createPlayer() {
         flight: flightOptions(),
         labels: state.labelsOn ? state.labels : [],
         labelReach: labelReach(),
+        elevationProfile: state.profile,
+        hud: demoHud,
         ghostTrail: state.ghost,
         mode: state.mode,
         snow: snowOptions(),
@@ -154,7 +211,7 @@ async function createPlayer() {
         if (player.isPlaying) recordFrame();
     });
     player.on('state', s => {
-        $('play').textContent = s === 'playing' ? '⏸ Pauza' : '▶ Přehrát';
+        $('play').textContent = s === 'playing' ? '⏸ Pause' : '▶ Play';
         if (s === 'playing') { pacing.last = 0; pacing.deltas = []; }
         if (s === 'paused' || s === 'ended') reportPacing();
     });
@@ -162,7 +219,7 @@ async function createPlayer() {
     await player.load(state.points, { title: state.name, subtitle: state.subtitle });
     if (player !== fly) return; // replaced by a newer player while loading (aspect switched, new GPX)
     renderMeta();
-    status('Připraveno. Tip: „Přednačíst“ před přehráním = bez děr v mapě.', 0);
+    status('Ready. Tip: “Preload tiles” before playing = no holes in the map.', 0);
 }
 
 async function loadGpxText(text: string, fallbackName: string) {
@@ -172,8 +229,8 @@ async function loadGpxText(text: string, fallbackName: string) {
     state.waypoints = gpx.waypoints.map(w => ({ ...w, kind: 'waypoint' }));
     state.name = gpx.name ?? fallbackName;
     const t0 = gpx.points.find(p => p.time)?.time;
-    state.subtitle = t0 ? new Date(t0).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
-    $('trackInfo').textContent = `${state.name} · ${gpx.points.length.toLocaleString('cs-CZ')} bodů`;
+    state.subtitle = t0 ? new Date(t0).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    $('trackInfo').textContent = `${state.name} · ${gpx.points.length.toLocaleString('en-US')} points`;
     state.labels = state.waypoints;
     await createPlayer();
     if (state.labelsOn) void loadLabels();
@@ -183,16 +240,16 @@ let labelRun = 0;
 async function loadLabels() {
     const run = ++labelRun; // a newer track or request wins; late answers for an old track are dropped
     try {
-        status('Hledám názvy obcí…');
+        status('Looking up place names…');
         // Precomputed labels next to the GPX (e.g. tolmin.places.json), otherwise OpenStreetMap/Overpass.
         const local = state.gpxUrl ? await fetch(state.gpxUrl.replace(/\.gpx$/i, '.places.json')).catch(() => null) : null;
         const places: FlyoverLabel[] = local?.ok ? await local.json() : await fetchPlaceLabels(state.points);
         if (run !== labelRun) return;
         state.labels = [...state.waypoints, ...places];
         await apply({ labels: state.labelsOn ? state.labels : [] });
-        status(`Názvy míst: ${fly?.labelCount ?? 0} na trase (z ${state.labels.length} v okolí)`);
+        status(`Place names: ${fly?.labelCount ?? 0} on the route (of ${state.labels.length} around it)`);
     } catch (err) {
-        if (run === labelRun) status(`Názvy míst se nepodařilo načíst (${(err as Error).message}).`);
+        if (run === labelRun) status(`Place names could not be loaded (${(err as Error).message}).`);
     }
 }
 
@@ -222,22 +279,22 @@ async function runExport(kind: VideoFormat | 'png') {
     const started = performance.now();
     try {
         if (kind === 'png') {
-            status('Renderuji fotku…');
+            status('Rendering the image…');
             await saveBlob(await fly.exportImage(), `${slug()}-${state.aspect}.png`);
-            status('Fotka hotová.', 1);
+            status('Image done.', 1);
         } else {
             const video = await fly.exportVideo({
                 format: kind,
                 signal: abort.signal,
-                onProgress: f => status(`Renderuji video… ${Math.round(f * 100)} %`, f),
+                onProgress: f => status(`Rendering the video… ${Math.round(f * 100)} %`, f),
             });
             await saveBlob(video.blob, `${slug()}-${state.aspect}.${video.extension}`);
             const secs = ((performance.now() - started) / 1000).toFixed(0);
-            status(`Video hotové za ${secs} s (${video.codec.toUpperCase()}).`, 1);
+            status(`Video done in ${secs} s (${video.codec.toUpperCase()}).`, 1);
             (window as unknown as { __lastExport: unknown }).__lastExport = { size: video.blob.size, codec: video.codec, secs };
         }
     } catch (err) {
-        status((err as Error).name === 'AbortError' ? 'Zrušeno.' : `Chyba: ${(err as Error).message}`, 0);
+        status((err as Error).name === 'AbortError' ? 'Cancelled.' : `Error: ${(err as Error).message}`, 0);
         console.error(err);
     } finally {
         setBusy(false);
@@ -253,11 +310,11 @@ bmSelect.value = state.basemap;
 const showBasemapHint = () => {
     const b = BASEMAPS[state.basemap];
     const sharing = {
-        open: 'Sdílení videa: volná licence, stačí uvést zdroj (je ve videu).',
-        personal: 'Sdílení videa: pro osobní, nevýdělečné příspěvky v pořádku (zdroj je ve videu).',
-        no: '⚠️ Podmínky poskytovatele nedovolují mapu exportovat a sdílet mimo aplikaci.',
+        open: 'Sharing the video: open licence, the credit in the video is enough.',
+        personal: 'Sharing the video: fine for personal, non-commercial posts (the credit is in the video).',
+        no: '⚠️ The provider’s terms do not allow exporting the map and sharing it outside the app.',
     }[b.sharing ?? 'personal'];
-    $('basemapHint').textContent = `${b.coverage ? `Pokrytí: ${b.coverage}. ` : ''}${sharing}`;
+    $('basemapHint').textContent = `${b.coverage ? `Coverage: ${b.coverage}. ` : ''}${sharing}`;
 };
 showBasemapHint();
 
@@ -296,11 +353,11 @@ $('camera').onclick = async e => {
 };
 ($('reach') as HTMLInputElement).oninput = e => {
     state.reach = Number((e.target as HTMLInputElement).value) / 100;
-    $('reachLabel').textContent = `vesnice do ${Math.round(LABEL_REACH.village * state.reach)} m`;
+    $('reachLabel').textContent = `villages within ${Math.round(LABEL_REACH.village * state.reach)} m`;
 };
 ($('reach') as HTMLInputElement).onchange = async () => {
     await apply({ labelReach: labelReach() });
-    status(`Názvy míst: ${fly?.labelCount ?? 0} na trase (z ${state.labels.length} v okolí)`);
+    status(`Place names: ${fly?.labelCount ?? 0} on the route (of ${state.labels.length} around it)`);
 };
 ($('snow') as HTMLInputElement).onchange = async e => {
     state.snow = (e.target as HTMLInputElement).checked;
@@ -309,7 +366,7 @@ $('camera').onclick = async e => {
 };
 ($('snowline') as HTMLInputElement).oninput = e => {
     state.snowline = Number((e.target as HTMLInputElement).value);
-    $('snowlineLabel').textContent = state.snowline ? `${state.snowline} m n. m.` : 'všude';
+    $('snowlineLabel').textContent = state.snowline ? `${state.snowline} m a.s.l.` : 'everywhere';
 };
 ($('snowline') as HTMLInputElement).onchange = async () => {
     await apply({ snow: snowOptions() });
@@ -341,6 +398,14 @@ $('preset').onclick = async e => {
     if (state.labelsOn && state.labels.length === state.waypoints.length) await loadLabels();
     else await apply({ labels: state.labelsOn ? state.labels : [] });
 };
+($('profile') as HTMLInputElement).onchange = async e => {
+    state.profile = (e.target as HTMLInputElement).checked;
+    await apply({ elevationProfile: state.profile });
+};
+($('stops') as HTMLInputElement).onchange = async e => {
+    state.stops = (e.target as HTMLInputElement).checked;
+    await apply({ flight: flightOptions() });
+};
 ($('ghost') as HTMLInputElement).onchange = async e => {
     state.ghost = (e.target as HTMLInputElement).checked;
     await apply({ ghostTrail: state.ghost });
@@ -357,17 +422,17 @@ $('openGpx').onclick = () => $('gpx').click();
     const f = (e.target as HTMLInputElement).files?.[0];
     if (!f) return;
     state.gpxUrl = '';
-    await loadGpxText(await f.text(), f.name.replace(/\.gpx$/i, '')).catch(err => status(`Chyba: ${err.message}`));
+    await loadGpxText(await f.text(), f.name.replace(/\.gpx$/i, '')).catch(err => status(`Error: ${err.message}`));
 };
 $('prefetch').onclick = async () => {
     if (!fly) return;
     abort = new AbortController();
     setBusy(true);
     try {
-        await fly.prefetch(f => status(`Přednačítám dlaždice… ${Math.round(f * 100)} %`, f), abort.signal);
-        status('Dlaždice načtené — přehrávání poběží z mezipaměti.', 1);
+        await fly.prefetch(f => status(`Preloading tiles… ${Math.round(f * 100)} %`, f), abort.signal);
+        status('Tiles loaded — playback will run from the cache.', 1);
     } catch (err) {
-        status((err as Error).name === 'AbortError' ? 'Zrušeno.' : `Chyba: ${(err as Error).message}`);
+        status((err as Error).name === 'AbortError' ? 'Cancelled.' : `Error: ${(err as Error).message}`);
     } finally {
         setBusy(false);
     }
@@ -398,11 +463,11 @@ function sameOriginPath(value: string | null): string | null {
 function loadSample(url: string) {
     return fetch(url)
         .then(r => (r.ok ? r.text() : Promise.reject(new Error(`${url}: HTTP ${r.status}`))))
-        .then(t => { state.gpxUrl = url; return loadGpxText(t, 'Trasa'); })
-        .catch(err => status(`Chyba: ${err.message}`));
+        .then(t => { state.gpxUrl = url; return loadGpxText(t, 'Track'); })
+        .catch(err => status(`Error: ${err.message}`));
 }
 const requested = new URLSearchParams(location.search).get('gpx');
 const gpxParam = sameOriginPath(requested) ?? 'tolmin.gpx';
-if (requested && !sameOriginPath(requested)) status('Parametr ?gpx= přijímá jen soubory .gpx z tohoto serveru.');
+if (requested && !sameOriginPath(requested)) status('The ?gpx= parameter only accepts .gpx files from this server.');
 ($('sample') as HTMLSelectElement).value = gpxParam;
 void loadSample(gpxParam);

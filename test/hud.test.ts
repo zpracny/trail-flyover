@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    placeLabelsOnTrack, thinLabels, drawLabels, drawDefaultHud, drawTip, withAlpha, fitText, wrapText, formatDistance, formatDuration, LABEL_REACH,
+    placeLabelsOnTrack, thinLabels, drawLabels, drawDefaultHud, drawElevationProfile, drawTip, withAlpha, fitText, wrapText, formatDistance, formatDuration, LABEL_REACH,
     type HudFrame, type PlacedLabel, type FlyoverLabel,
 } from '../src/hud/hud.ts';
 import { readFileSync } from 'node:fs';
@@ -9,6 +9,7 @@ import { parseGpx } from '../src/core/gpx.ts';
 import { buildFlightPlan } from '../src/core/flightPlan.ts';
 import { BASEMAPS, resolveBasemap } from '../src/maplibre/basemaps.ts';
 import { snowTileUrl } from '../src/effects/snow.ts';
+import { STRINGS, resolveStrings } from '../src/core/i18n.ts';
 
 /** Canvas stand-in: records calls; text is 10 px per character at any font. */
 function fakeCtx() {
@@ -65,6 +66,7 @@ function frame(over: Partial<HudFrame> = {}): HudFrame {
         pose: { camera: { lon: 14, lat: 48.99, alt: 3000 }, target: { lon: 14, lat: 49, alt: 500 }, bearing: 0, pitch: 60, range: 3000 },
         project: (lon, lat) => ({ x: 540 + (lon - 14) * 20000, y: 675 - (lat - 49) * 20000 }),
         tip: { x: 540, y: 700 }, title: 'Test', subtitle: '1. ledna 2026', attribution: '© Test', accent: '#ff7a1a',
+        stop: null, profile: null, showProfile: false, strings: STRINGS.en,
         ...over,
     };
 }
@@ -291,11 +293,11 @@ test('default HUD: long titles are shortened to fit, stats show moving time, not
     const shown = drawn.find(t => t.startsWith('Alps'))!;
     assert.ok(shown.endsWith('…') && shown.length < title.length, shown);
     assert.ok([...shown].length * 10 <= 1080 - 88, 'fits between the margins');
-    assert.ok(drawn.includes('12.3 km') && drawn.includes('321 m') && drawn.includes('1 h 00 min') && drawn.includes('čas v pohybu'), drawn.join(' | '));
+    assert.ok(drawn.includes('12.3 km') && drawn.includes('321 m') && drawn.includes('1 h 00 min') && drawn.includes('moving time'), drawn.join(' | '));
     // No timestamps → elevation instead of time; no elevation either → two cells only.
     const b = fakeCtx();
     drawDefaultHud(b.ctx, frame({ stats: { distance: 900, ascent: 0, elapsed: null, moving: null, elevation: 512 } }));
-    assert.ok(b.texts().includes('900 m') && b.texts().includes('512 m n. m.'));
+    assert.ok(b.texts().includes('900 m') && b.texts().includes('512 m a.s.l.'));
     const c = fakeCtx();
     drawDefaultHud(c.ctx, frame({ title: '', subtitle: '', stats: { distance: 0, ascent: 0, elapsed: null, moving: null, elevation: NaN } }));
     assert.ok(!c.texts().some(t => t.includes('NaN')));
@@ -379,11 +381,11 @@ test('basemaps: every definition is complete and consistent', () => {
 
 test('basemaps: API keys are inserted (URL-encoded), missing ones give a clear error', () => {
     assert.equal(resolveBasemap('esri-satellite'), BASEMAPS['esri-satellite']);
-    assert.throws(() => resolveBasemap('nope'), /Neznámý mapový podklad/);
+    assert.throws(() => resolveBasemap('nope'), /Unknown basemap/);
     // A host app's own keyed basemap.
     const keyed = { id: 'k', label: 'S klíčem', tiles: ['https://tiles.example/{z}/{x}/{y}?apikey={apikey}'], tileSize: 256, maxzoom: 18, attribution: '©', hillshade: 0, requiresKey: 'example' };
-    assert.throws(() => resolveBasemap(keyed), /API klíč/);
-    assert.throws(() => resolveBasemap(keyed, { example: '' }), /API klíč/);
+    assert.throws(() => resolveBasemap(keyed), /needs an API key \(apiKeys\.example\)/);
+    assert.throws(() => resolveBasemap(keyed, { example: '' }), /needs an API key/);
     const b = resolveBasemap(keyed, { example: 'a b&c=d' });
     assert.ok(b.tiles[0].endsWith('?apikey=a%20b%26c%3Dd'), b.tiles[0]);
     assert.ok(keyed.tiles[0].includes('{apikey}'), 'the definition passed in is not modified');
@@ -404,4 +406,72 @@ test('snow tile URL: survives MapLibre placeholder substitution and round-trips 
     assert.equal((url.match(/\{[zxy]\}/g) ?? []).length, 3, 'exactly one set of placeholders is visible to MapLibre');
     const everywhere = JSON.parse(decodeURIComponent(/p=(.+)$/.exec(snowTileUrl(src))![1]));
     assert.deepEqual([everywhere.s, everywhere.a], [null, 1]);
+});
+
+// ---------------------------------------------------------------- v0.2: profile, marker styles, language
+
+const PROFILE = (() => {
+    const n = 50;
+    const distance = Float64Array.from({ length: n }, (_, i) => i * 200), elevation = Float64Array.from({ length: n }, (_, i) => 300 + 200 * Math.sin(i / 8));
+    return { distance, elevation, min: Math.min(...elevation), max: Math.max(...elevation) };
+})();
+
+test('elevation profile: whole route faintly, travelled part filled, a dot at the current position', () => {
+    const rect = { x: 100, y: 1000, width: 800, height: 100 };
+    const run = (distance: number, profile: HudFrame['profile'] = PROFILE) => {
+        const c = fakeCtx();
+        drawElevationProfile(c.ctx, frame({ profile, stats: { ...frame().stats, distance } }), rect);
+        const dot = c.calls.find(x => x[0] === 'arc') as [string, number, number, number] | undefined;
+        const xs = c.calls.filter(x => x[0] === 'lineTo' || x[0] === 'moveTo').map(x => x[1] as number);
+        const ys = c.calls.filter(x => x[0] === 'lineTo' || x[0] === 'moveTo').map(x => x[2] as number);
+        return { fills: c.calls.filter(x => x[0] === 'fill').length, strokes: c.calls.filter(x => x[0] === 'stroke').length, dot, xs, ys, calls: c.calls.length };
+    };
+    const mid = run(4900); // half of 9 800 m
+    assert.equal(mid.fills, 3, 'ghost, travelled part, dot');
+    assert.equal(mid.strokes, 1);
+    assert.ok(Math.abs(mid.dot![1] - 500) < 1, `dot at x = ${mid.dot![1]}`);
+    assert.ok(mid.xs.every(x => x >= 100 - 1e-9 && x <= 900 + 1e-9) && mid.ys.every(y => y >= 1000 - 1e-9 && y <= 1100 + 1e-9), 'everything inside the rectangle');
+    assert.ok(Math.abs(run(0).dot![1] - 100) < 1e-9 && run(0).fills === 2, 'at the start: no travelled part yet');
+    assert.ok(Math.abs(run(1e9).dot![1] - 900) < 1e-9, 'past the end: clamped to the finish');
+    assert.equal(run(4900, null).calls, 0, 'no elevations → draws nothing');
+    assert.equal(run(4900, { ...PROFILE, distance: new Float64Array(1), elevation: new Float64Array(1) }).calls, 0);
+    // A flat route still draws (no division by zero).
+    const flat = run(4900, { distance: PROFILE.distance, elevation: new Float64Array(50).fill(200), min: 200, max: 200 });
+    assert.ok(flat.ys.every(Number.isFinite) && flat.fills === 3);
+});
+
+test('built-in panel: profile on request, texts in the chosen language, decimal comma in Czech', () => {
+    const texts = (over: Partial<HudFrame>) => { const c = fakeCtx(); drawDefaultHud(c.ctx, frame(over)); return { t: c.texts(), arcs: c.calls.filter(x => x[0] === 'arc').length }; };
+    const en = texts({});
+    assert.ok(en.t.includes('12.3 km') && en.t.includes('distance') && en.t.includes('ascent') && en.t.includes('moving time'), en.t.join(' | '));
+    const cs = texts({ strings: STRINGS.cs });
+    assert.ok(cs.t.includes('12,3 km') && cs.t.includes('vzdálenost') && cs.t.includes('stoupání') && cs.t.includes('čas v pohybu'), cs.t.join(' | '));
+    const custom = texts({ strings: resolveStrings('en', { distance: 'Strecke', decimal: ',' }) });
+    assert.ok(custom.t.includes('Strecke') && custom.t.includes('12,3 km') && custom.t.includes('ascent'));
+    assert.equal(texts({ showProfile: false, profile: PROFILE }).arcs, 0);
+    assert.equal(texts({ showProfile: true, profile: PROFILE }).arcs, 1, 'profile drawn (its position dot)');
+    assert.equal(texts({ showProfile: true, profile: null }).arcs, 0, 'asked for, but the track has no elevations');
+    assert.equal(formatDistance(12345, ','), '12,3 km');
+    assert.equal(formatDistance(850, ','), '850 m');
+    assert.equal(formatDistance(1234), '1.23 km');
+});
+
+test('labels: own colour and icon per label; label-free bands follow the app\'s panels', () => {
+    const { ctx, calls } = fakeCtx();
+    drawLabels(ctx, [
+        { ...label('Sněžka', 14, 49, 100, 'peak'), color: '#f97316', icon: '▲', priority: 5 },
+        { ...label('Den 1', 14.02, 49, 200), color: 'rgb(99, 102, 241)', icon: '⛺' },
+        label('Obyčejná', 13.98, 49.01, 300),
+    ], frame(), 5000);
+    const texts = calls.filter(c => c[0] === 'fillText').map(c => c[1]);
+    assert.deepEqual(texts, ['▲ Sněžka', '⛺ Den 1', 'Obyčejná']);
+    const fills = calls.filter(c => c[0] === 'set:fillStyle').map(c => c[1]);
+    for (const colour of ['#f97316', 'rgb(99, 102, 241)', '#ff7a1a']) assert.ok(fills.includes(colour), `${colour} used for a dot`);
+    // A place 300 px from the bottom is fine with the default panel, hidden when the app's panel is taller.
+    const low = [label('Dole', 14, 49 - (1050 - 675) / 20000, 100)];
+    assert.deepEqual(Object.keys(drawn(low, frame(), 5000)), ['Dole']);
+    assert.deepEqual(Object.keys(drawn(low, frame(), 5000, { bands: { bottom: 0.3 } })), []);
+    const high = [label('Nahoře', 14, 49 + (675 - 200) / 20000, 100)];
+    assert.deepEqual(Object.keys(drawn(high, frame(), 5000)), ['Nahoře']);
+    assert.deepEqual(Object.keys(drawn(high, frame(), 5000, { bands: { top: 0.2 } })), []);
 });

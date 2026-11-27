@@ -23,6 +23,8 @@ import {
 import { sanitizeTrack, unwrapLongitudes } from './clean.ts';
 
 const DEG = Math.PI / 180;
+/** Shortest video the planner makes (s). Below ~8 s a fly-over is more of a flash than a flight. */
+const MIN_DURATION = 3;
 
 /** Returns ground elevation in metres for a point, or NaN when unknown. */
 export type ElevationSampler = (lon: number, lat: number) => number;
@@ -44,16 +46,16 @@ export interface CameraPreset {
 
 export const CAMERA_PRESETS: Record<PresetId, CameraPreset> = {
     // lead is tuned so the trail tip sits at ~60–65 % of the frame height
-    drone: { label: 'Dron', pitch: 62, screenRate: 0.36, lead: 0.12 },
-    low: { label: 'Nízký průlet', pitch: 73, screenRate: 0.45, lead: 0.2 },
-    overview: { label: 'Přehled', pitch: 45, screenRate: 0.18, lead: 0.05 },
+    drone: { label: 'Drone', pitch: 62, screenRate: 0.36, lead: 0.12 },
+    low: { label: 'Low flight', pitch: 73, screenRate: 0.45, lead: 0.2 },
+    overview: { label: 'Overview', pitch: 45, screenRate: 0.18, lead: 0.05 },
     // 2D map: camera straight down, the same smoothing and timing as the 3D presets.
-    topdown: { label: '2D shora', pitch: 0, screenRate: 0.3, lead: 0.12 },
+    topdown: { label: '2D top-down', pitch: 0, screenRate: 0.3, lead: 0.12 },
 };
 
 export interface FlightOptions {
     /**
-     * Total video length in seconds (min. 6). Default scales with track length:
+     * Video length in seconds, not counting stops (min. 3). Default scales with track length:
      * 12 s + 0.4 s/km, at most 60 s (static camera: 8 s + 0.15 s/km, at most 24 s).
      */
     duration?: number;
@@ -88,6 +90,73 @@ export interface FlightOptions {
     northUp?: boolean;
     /** Internal sample rate of the precomputed camera path. */
     sampleRate?: number;
+    /**
+     * Places where the flight stands still for a while — to show a photo, a note, a split time.
+     * The trail and the camera slow down smoothly, wait, and set off again. Stops add to the
+     * video length: total = `duration` + the sum of the stops. See `FlightPlan.stops` / `stopAt`.
+     */
+    stops?: FlightStop[];
+    /** A stop given by lon/lat further than this from the track is ignored (m). Default 500. */
+    stopMaxOffTrack?: number;
+    /**
+     * Parts of the picture the track should stay clear of in whole-route shots (overview,
+     * static camera), as fractions of the picture: `top` and `bottom` of its height, `side` of
+     * its width on each side. Defaults fit the built-in title and stats panel:
+     * top 0.14, bottom 0.19, side 0.07. Raise them for bigger panels or social-media safe zones.
+     */
+    margins?: { top?: number; bottom?: number; side?: number };
+}
+
+/** Where a stop is: one of `distance`, `time` or `lon`+`lat` (tried in this order). */
+export interface FlightStop {
+    /** Metres along the recorded track. */
+    distance?: number;
+    /** Timestamp in ms, matched against the times of the track points. */
+    time?: number;
+    /** A place; the first time the track passes near it is used. */
+    lon?: number;
+    lat?: number;
+    /** Seconds the flight stands still. */
+    duration: number;
+    /** Anything the app wants back with the stop (photo ids, a caption…). */
+    data?: unknown;
+}
+
+/** A stop placed on the timeline of the video. */
+export interface PlannedStop {
+    /** Index in the `stops` option this came from. */
+    input: number;
+    /** Metres along the recorded track (same scale as `TrackStats.distance`). */
+    distance: number;
+    lon: number;
+    lat: number;
+    /** Video time (s) when the trail arrives and stands still, and when it sets off again. */
+    start: number;
+    end: number;
+    duration: number;
+    data: unknown;
+}
+
+/** The stop the video is standing at, with how far through it we are. */
+export interface ActiveStop {
+    stop: PlannedStop;
+    /** Order of the stop along the track (0 = first). */
+    index: number;
+    /** Seconds since the trail stopped, and until it sets off again. */
+    elapsed: number;
+    remaining: number;
+    /** 0–1 through the stop. */
+    progress: number;
+}
+
+/** Elevation along the track, ready for drawing a profile (a few hundred points). */
+export interface ElevationProfile {
+    /** Metres along the recorded track. */
+    distance: Float64Array;
+    /** Metres above sea level (real, not exaggerated). */
+    elevation: Float64Array;
+    min: number;
+    max: number;
 }
 
 export interface Vec3Geo {
@@ -125,6 +194,8 @@ export interface FlightPlan {
     length: number;
     meta: {
         camera: 'follow' | 'static';
+        /** Seconds the trail is moving: `duration` minus intro, outro and stops. */
+        moving: number;
         preset: PresetId;
         pitch: number;
         range: number;
@@ -149,6 +220,12 @@ export interface FlightPlan {
     distanceAt(t: number): number;
     /** Inverse of distanceAt: the first moment the trail tip reaches distance s (0 for the start, also during the intro). */
     timeAt(s: number): number;
+    /** Stops in the order the trail reaches them (those that could not be placed are left out). */
+    stops: PlannedStop[];
+    /** The stop the video is standing at at time t, or null while the trail is moving. */
+    stopAt(t: number): ActiveStop | null;
+    /** Elevation profile for drawing, or null when the track has no elevations. */
+    profile: ElevationProfile | null;
     tipAt(t: number): { lon: number; lat: number; ele: number };
     statsAt(t: number): TrackStats;
 }
@@ -165,7 +242,7 @@ interface PoseParams {
 export function buildFlightPlan(input: TrackPoint[], opts: FlightOptions = {}): FlightPlan {
     // Broken fixes out, longitudes continuous across ±180° (see clean.ts).
     const pts = unwrapLongitudes(sanitizeTrack(input));
-    if (pts.length < 2) throw new Error('Trasa musí mít aspoň 2 body.');
+    if (pts.length < 2) throw new Error('The track needs at least 2 points.');
 
     // --- Local frame -------------------------------------------------------
     let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
@@ -185,7 +262,7 @@ export function buildFlightPlan(input: TrackPoint[], opts: FlightOptions = {}): 
     });
     let rawLen = 0;
     for (let i = 1; i < pts.length; i++) rawLen += Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
-    if (rawLen < 1) throw new Error('Trasa je příliš krátká.');
+    if (rawLen < 1) throw new Error('The track is too short.');
 
     // Per-point channels carried through the resampling: exact recorded distance and moving time.
     const rawDist = new Float64Array(pts.length);
@@ -233,7 +310,8 @@ export function buildFlightPlan(input: TrackPoint[], opts: FlightOptions = {}): 
     const lengthKm = geoCum[n - 1] / 1000;
     const isStatic = opts.camera === 'static';
     const autoDuration = isStatic ? clamp(8 + lengthKm * 0.15, 8, 24) : clamp(12 + lengthKm * 0.4, 12, 60);
-    const duration = Math.max(6, opts.duration ?? autoDuration);
+    /** Length of the flight itself; stops are added on top (see `duration` below). */
+    const flightDuration = Math.max(MIN_DURATION, opts.duration ?? autoDuration);
     const presetId: PresetId = opts.preset ?? 'drone';
     const preset = CAMERA_PRESETS[presetId];
     const northUp = opts.northUp ?? false;
@@ -256,46 +334,137 @@ export function buildFlightPlan(input: TrackPoint[], opts: FlightOptions = {}): 
     // wander of a typical trail, so the tip would sweep across the whole picture. Step back most
     // of the way to the strip width of a 4:5 frame (9:16 → camera 1.3× further).
     const narrow = clamp(0.8 / aspect, 1, 1.6) ** 0.75;
+    // --- Stops: where along the track, in the order the trail reaches them -----
+    const holds: Array<{ input: number; s: number; duration: number; data: unknown }> = [];
+    {
+        const centreLon = (minLon + maxLon) / 2;
+        const maxOff = opts.stopMaxOffTrack ?? 500;
+        (opts.stops ?? []).forEach((stop, input) => {
+            if (!stop || !Number.isFinite(stop.duration) || !(stop.duration > 0)) return;
+            let idx = NaN;
+            if (Number.isFinite(stop.distance)) {
+                idx = indexOfValue(geoCum, stop.distance as number);
+            } else if (timeFilled && Number.isFinite(stop.time) && (stop.time as number) >= timeFilled[0] - 60000 && (stop.time as number) <= timeFilled[n - 1] + 60000) {
+                idx = indexOfValue(timeFilled, stop.time as number);
+            } else if (Number.isFinite(stop.lon) && Number.isFinite(stop.lat)) {
+                // Same turn of the globe as the (unwrapped) track.
+                const lon = (stop.lon as number) + 360 * Math.round((centreLon - (stop.lon as number)) / 360);
+                const [x, y] = proj.toXY(lon, stop.lat as number);
+                const d = (i: number) => Math.hypot(rs.x[i] - x, rs.y[i] - y);
+                let best = Infinity;
+                for (let i = 0; i < n; i++) best = Math.min(best, d(i));
+                if (!(best <= maxOff)) return;
+                // The first pass about as close as the closest one, then its local minimum.
+                const near = Math.min(maxOff, Math.max(best * 1.4, best + 150));
+                let i = 0;
+                while (i < n - 1 && d(i) > near) i++;
+                let at = i;
+                for (let k = i + 1; k < n && d(k) <= near; k++) if (d(k) < d(at)) at = k;
+                idx = at;
+            }
+            if (!Number.isFinite(idx)) return;
+            holds.push({ input, s: clamp(idx * step, 0, L), duration: stop.duration, data: stop.data });
+        });
+        holds.sort((a, b) => a.s - b.s || a.input - b.input);
+    }
+    const holdTotal = holds.reduce((sum, h) => sum + h.duration, 0);
+    /** Lengths of the legs between start, stops and finish. */
+    const legs: number[] = [];
+    for (let k = 0; k <= holds.length; k++) legs.push((k < holds.length ? holds[k].s : L) - (k ? holds[k - 1].s : 0));
+    const movingLegs = Math.max(1, legs.filter(l => l > 1e-6).length);
+    /**
+     * Time a leg takes at cruise speed v with ramps of `ramp` seconds at both ends. A leg too
+     * short to reach cruise speed uses the same acceleration and a lower top speed.
+     */
+    const legTime = (len: number, v: number, ramp: number) =>
+        len <= 1e-6 ? 0 : len >= v * ramp ? len / v + ramp : 2 * ramp * Math.sqrt(len / (v * ramp));
+
     const timing = (introIn: number, outroIn: number) => {
         // Intro and outro must leave at least a second for the flight itself.
-        const fit = Math.min(1, Math.max(0, duration - 1) / Math.max(1e-9, introIn + outroIn));
+        const fit = Math.min(1, Math.max(0, flightDuration - 1) / Math.max(1e-9, introIn + outroIn));
         const intro = introIn * fit, outro = outroIn * fit;
-        const follow = duration - intro - outro;
-        const ramp = Math.min(2.2, follow * 0.2);
-        const v = L / (follow - ramp);
+        const follow = flightDuration - intro - outro;
+        let ramp = Math.min(2.2, follow * 0.2);
+        let v = L / (follow - ramp);
+        if (holds.length) {
+            // Every leg starts and ends at rest: shorter ramps, and the cruise speed at which
+            // all legs together take exactly the time available.
+            ramp = Math.min(ramp, (0.4 * follow) / movingLegs);
+            const total = (speed: number) => legs.reduce((sum, len) => sum + legTime(len, speed, ramp), 0);
+            let lo = L / follow, hi = lo * 2;
+            while (total(hi) > follow && hi < lo * 1e9) hi *= 2;
+            for (let k = 0; k < 60; k++) {
+                const mid = Math.sqrt(lo * hi);
+                if (total(mid) > follow) lo = mid; else hi = mid;
+            }
+            v = hi;
+        }
         const range = opts.range ?? clamp((v / preset.screenRate) * narrow, 350, 30000);
         return { intro, outro, follow, ramp, v, range };
     };
+    // Very short videos (under 8 s) get proportionally shorter overview shots.
+    const minIntro = Math.min(1.6, flightDuration * 0.2), minOutro = Math.min(2, flightDuration * 0.25);
     let tm = isStatic
         // Static camera: a short look at the empty map, then the line, then the finished line stays.
-        ? timing(Math.max(0, opts.intro ?? clamp(duration * 0.05, 0.4, 1)), Math.max(0, opts.outro ?? clamp(duration * 0.12, 1.2, 3)))
-        : timing(Math.max(0, opts.intro ?? clamp(duration * 0.12, 1.6, 4)), Math.max(0, opts.outro ?? clamp(duration * 0.14, 2, 5)));
+        ? timing(Math.max(0, opts.intro ?? clamp(flightDuration * 0.05, 0.4, 1)), Math.max(0, opts.outro ?? clamp(flightDuration * 0.12, 1.2, 3)))
+        : timing(Math.max(0, opts.intro ?? clamp(flightDuration * 0.12, minIntro, 4)), Math.max(0, opts.outro ?? clamp(flightDuration * 0.14, minOutro, 5)));
     if (!isStatic && (opts.intro === undefined || opts.outro === undefined)) {
         // Zooming from the whole-track overview to the follow distance is perceived logarithmically.
         // Give big zoom ratios (long tracks) more time: keep d²(ln range)/dt² ≤ 0.6 /s²
         // (quintic easing peaks at 5.77·Δ/T²). The overview estimate is rough, hence the 0.45 target.
         const need = Math.sqrt((5.77 * Math.abs(Math.log(overviewEstimate / tm.range))) / 0.45);
-        const cap = Math.min(6, duration * 0.25);
+        const cap = Math.min(6, flightDuration * 0.25);
         tm = timing(
-            Math.max(0, opts.intro ?? clamp(Math.max(tm.intro, need), 1.6, Math.max(1.6, cap))),
-            Math.max(0, opts.outro ?? clamp(Math.max(tm.outro, need), 2, Math.max(2, cap))),
+            Math.max(0, opts.intro ?? clamp(Math.max(tm.intro, need), minIntro, Math.max(minIntro, cap))),
+            Math.max(0, opts.outro ?? clamp(Math.max(tm.outro, need), minOutro, Math.max(minOutro, cap))),
         );
     }
     const { intro, outro, follow, ramp, v, range } = tm;
     const lead = preset.lead * range;
 
+    /** Total video length: the flight plus the time spent standing at stops. */
+    const duration = flightDuration + holdTotal;
+    /** The follow phase on the clock: moving legs and stops, in order. */
+    const followSpan = follow + holdTotal;
+    interface Segment { t0: number; T: number; s0: number; len: number; v: number; r: number; hold: number }
+    const segments: Segment[] = [];
+    {
+        let t0 = 0, s0 = 0;
+        legs.forEach((len, k) => {
+            if (len > 1e-6) {
+                // Short leg: same acceleration, lower top speed (see legTime).
+                const f = len >= v * ramp ? 1 : Math.sqrt(len / (v * ramp));
+                const T = legTime(len, v, ramp);
+                segments.push({ t0, T, s0, len, v: v * f, r: ramp * f, hold: -1 });
+                t0 += T;
+                s0 += len;
+            }
+            if (k < holds.length) {
+                segments.push({ t0, T: holds[k].duration, s0: holds[k].s, len: 0, v: 0, r: 0, hold: k });
+                t0 += holds[k].duration;
+                s0 = holds[k].s;
+            }
+        });
+    }
+    /** Distance of the trail tip at time tau of the follow phase: smooth start and stop on every leg. */
     const sOf = (tau: number): number => {
         if (tau <= 0) return 0;
-        if (tau >= follow) return L;
-        if (tau < ramp) {
-            const u = tau / ramp;
-            return v * ramp * (u ** 3 - u ** 4 / 2);
+        if (tau >= followSpan) return L;
+        for (const g of segments) {
+            const x = tau - g.t0;
+            if (x >= g.T) continue;
+            if (g.hold >= 0) return g.s0;
+            if (x < g.r) {
+                const u = x / g.r;
+                return g.s0 + g.v * g.r * (u ** 3 - u ** 4 / 2);
+            }
+            if (x > g.T - g.r) {
+                const u = (g.T - x) / g.r;
+                return g.s0 + g.len - g.v * g.r * (u ** 3 - u ** 4 / 2);
+            }
+            return g.s0 + (g.v * g.r) / 2 + g.v * (x - g.r);
         }
-        if (tau > follow - ramp) {
-            const u = (follow - tau) / ramp;
-            return L - v * ramp * (u ** 3 - u ** 4 / 2);
-        }
-        return v * ramp / 2 + v * (tau - ramp);
+        return L;
     };
 
     // --- Smoothed camera path (extended past both ends) ---------------------
@@ -381,7 +550,10 @@ export function buildFlightPlan(input: TrackPoint[], opts: FlightOptions = {}): 
         const tz0 = meanGround * exag;
         // Exact fit with a pinhole camera: every track point must land inside the safe area
         // (horizontal ±0.86, vertical between the bottom stats panel and the title).
-        const SAFE_X = 0.86, SAFE_TOP = 0.72, SAFE_BOTTOM = -0.62;
+        const mg = opts.margins ?? {};
+        const SAFE_X = 1 - 2 * clamp(mg.side ?? 0.07, 0, 0.45);
+        const SAFE_TOP = 1 - 2 * clamp(mg.top ?? 0.14, 0, 0.45);
+        const SAFE_BOTTOM = -(1 - 2 * clamp(mg.bottom ?? 0.19, 0, 0.45));
         const bounds = (w: number, r: number) => {
             // camera frame in (u = right, w = forward, z = up) coordinates
             const camW = w - r * sp, camZ = tz0 + r * cp;
@@ -486,16 +658,16 @@ export function buildFlightPlan(input: TrackPoint[], opts: FlightOptions = {}): 
         let pose: PoseParams;
         if (staticPose) {
             pose = staticPose;
-            sAt[j] = t < intro ? 0 : t <= intro + follow ? sOf(t - intro) : L;
+            sAt[j] = t < intro ? 0 : t <= intro + followSpan ? sOf(t - intro) : L;
         } else if (t < intro) {
             pose = introFlight(smootherstep(t / intro));
             sAt[j] = 0;
-        } else if (t <= intro + follow || outro <= 0) {
+        } else if (t <= intro + followSpan || outro <= 0) {
             const s = sOf(t - intro);
             pose = followPose(s);
             sAt[j] = s;
         } else {
-            pose = outroFlight(smootherstep((t - intro - follow) / outro));
+            pose = outroFlight(smootherstep((t - intro - followSpan) / outro));
             sAt[j] = L;
         }
         px[j] = pose.x; py[j] = pose.y; pz[j] = pose.z;
@@ -524,7 +696,7 @@ export function buildFlightPlan(input: TrackPoint[], opts: FlightOptions = {}): 
         let any = false;
         for (let j = 0; j < S; j++) {
             const t = Math.min(duration, j / rate);
-            if (t < intro || t > intro + follow) continue;
+            if (t < intro || t > intro + followSpan) continue;
             const h = hs[j] * DEG, p = pp[j] * DEG;
             const fi = clamp(sAt[j] / step, 0, n - 1);
             const dx = sampleAt(rs.x, fi) - px[j], dy = sampleAt(rs.y, fi) - py[j];
@@ -607,11 +779,35 @@ export function buildFlightPlan(input: TrackPoint[], opts: FlightOptions = {}): 
     };
     const trackIdx = (s: number) => clamp(s / step, 0, n - 1);
 
+    const stops: PlannedStop[] = segments.filter(g => g.hold >= 0).map(g => {
+        const h = holds[g.hold];
+        const i = trackIdx(h.s);
+        return {
+            input: h.input, distance: sampleAt(geoCum, i), lon: sampleAt(trackLon, i), lat: sampleAt(trackLat, i),
+            start: intro + g.t0, end: intro + g.t0 + g.T, duration: g.T, data: h.data,
+        };
+    });
+
+    // Elevation profile for drawing: a few hundred evenly spaced points are plenty.
+    let profile: ElevationProfile | null = null;
+    if (gps || dem) {
+        const P = Math.min(n, 512);
+        const distance = new Float64Array(P), elevation = new Float64Array(P);
+        let min = Infinity, max = -Infinity;
+        for (let k = 0; k < P; k++) {
+            const i = P > 1 ? (k * (n - 1)) / (P - 1) : 0;
+            distance[k] = sampleAt(geoCum, i);
+            elevation[k] = sampleAt(displayEle, i);
+            min = Math.min(min, elevation[k]); max = Math.max(max, elevation[k]);
+        }
+        profile = { distance, elevation, min, max };
+    }
+
     return {
         duration,
         length: rawDist[pts.length - 1],
         meta: {
-            camera: isStatic ? 'static' : 'follow', preset: presetId, pitch,
+            camera: isStatic ? 'static' : 'follow', moving: follow, preset: presetId, pitch,
             range: staticPose ? staticPose.range : range, followSpeed: v, intro, outro, step, exaggeration: exag,
         },
         track: { lon: trackLon, lat: trackLat, ele: displayEle, s: trackS },
@@ -627,6 +823,19 @@ export function buildFlightPlan(input: TrackPoint[], opts: FlightOptions = {}): 
         },
         distanceAt,
         timeAt,
+        stops,
+        stopAt(t) {
+            if (!(t >= 0)) return null;
+            for (let index = 0; index < stops.length; index++) {
+                const stop = stops[index];
+                if (t >= stop.start && t < stop.end) {
+                    const elapsed = t - stop.start;
+                    return { stop, index, elapsed, remaining: stop.end - t, progress: elapsed / stop.duration };
+                }
+            }
+            return null;
+        },
+        profile,
         tipAt(t) {
             const i = trackIdx(distanceAt(t));
             return { lon: sampleAt(trackLon, i), lat: sampleAt(trackLat, i), ele: sampleAt(groundTrack, i) };
@@ -642,6 +851,19 @@ export function buildFlightPlan(input: TrackPoint[], opts: FlightOptions = {}): 
             };
         },
     };
+}
+
+/** Fractional index at which a non-decreasing array reaches `value` (clamped to the ends). */
+function indexOfValue(arr: ArrayLike<number>, value: number): number {
+    const n = arr.length;
+    if (!(value > arr[0])) return 0;
+    if (value >= arr[n - 1]) return n - 1;
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (arr[mid] <= value) lo = mid; else hi = mid;
+    }
+    return lo + (arr[hi] > arr[lo] ? (value - arr[lo]) / (arr[hi] - arr[lo]) : 0);
 }
 
 /**

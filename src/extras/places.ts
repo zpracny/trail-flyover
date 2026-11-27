@@ -67,7 +67,7 @@ export async function fetchPlaceLabels(points: TrackPoint[], o: PlaceLabelOption
             lastErr = err;
         }
     }
-    if (!elements) throw lastErr ?? new Error('Overpass nedostupný');
+    if (!elements) throw lastErr ?? new Error('No Overpass server answered');
 
     // Keep only places close to the track (cheap planar distance on a decimated track).
     const maxOff = o.maxOffTrack ?? 2000;

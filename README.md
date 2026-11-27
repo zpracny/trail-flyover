@@ -19,8 +19,8 @@ for social media. A framework-independent component built on MapLibre GL.
 - **No API keys.** Satellite, topographic and black-and-white basemaps work out of the box; an
   optional winter filter turns any of them snowy.
 
-> The demo UI, the labels of the default stats panel and the error messages are in Czech for now.
-> Apps normally draw their own panel (see [Custom HUD](#custom-hud)).
+- **Stops for photos, an elevation profile, coloured markers** for apps that tell a richer story.
+- **English by default**, Czech built in (`locale: 'cs'`), any text can be overridden.
 
 ## Requirements
 
@@ -40,7 +40,7 @@ npm run build:lib                   # the package apps install: dist/ (JavaScrip
 npm run compare                     # smoothness compared with a keyframe camera
 ```
 
-Tests: 87 tests in about 10 s, on a real 121 km recording, a 46 km section of it, and synthetic and
+Tests: 98 tests in about 10 s, on a real 121 km recording, a 46 km section of it, and synthetic and
 random tracks. GitHub Actions runs the same checks on every push.
 
 ## Install into an app
@@ -49,12 +49,12 @@ The package is not on npm yet. Install a released version from GitHub; the app p
 `maplibre-gl` (5 or newer):
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.1.0/trail-flyover-0.1.0.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.2.0/trail-flyover-0.2.0.tgz maplibre-gl
 ```
 
 That is a ready-built package (ES modules with type declarations in `dist/`), pinned by a
 checksum in your lockfile. Installing straight from git also works
-(`npm install github:zpracny/trail-flyover#v0.1.0`); npm then builds the package on install.
+(`npm install github:zpracny/trail-flyover#v0.2.0`); npm then builds the package on install.
 Prefer the tarball on build servers: npm records a git install as `git+ssh://`, which needs an
 SSH key there.
 
@@ -94,7 +94,7 @@ The player expects to be called in quick succession (sliders, React effects):
 - `update()` may be called while `load()` is still running. An invalid change (unknown basemap,
   missing key) fails and changes nothing.
 - During an export or a prefetch, `load()`, `update()` and another export fail with an error
-  ("Probíhá export…", an export is in progress). `seek()` and `play()` are ignored in that time.
+  ("An export or prefetch is in progress…"). `seek()` and `play()` are ignored in that time.
 - `destroy()` may be called at any time, even in the middle of loading or exporting. A load in
   progress is dropped and no extra map is left behind; an export ends with `AbortError`.
 - An unreachable or missing tile does not make `load()` fail. The map is completed when the tile
@@ -115,6 +115,71 @@ new TrailFlyover(el, {
     },
 });
 ```
+
+### Stops: pausing the flight to show a photo
+
+Give the flight places to stop at. The trail and the camera slow down smoothly, stand still for
+the given time and set off again; the app draws whatever belongs there (a photo card, a note)
+in its `hud` function.
+
+```ts
+const fly = new TrailFlyover(el, {
+    maplibregl,
+    flight: {
+        duration: 30,                                   // the flight itself; stops come on top
+        stops: [
+            { time: photo.takenAt, duration: 3, data: photo },          // by timestamp of the recording…
+            { lon: 13.65, lat: 45.96, duration: 5, data: gallery },     // …by place (first pass within 500 m)…
+            { distance: 60_000, duration: 2 },                          // …or by metres along the track
+        ],
+    },
+    hud: (ctx, f) => {
+        drawMyStats(ctx, f);
+        if (f.stop) {
+            // f.stop.stop.data is what you passed in; elapsed / remaining / progress say where in the stop we are
+            const alpha = Math.min(1, f.stop.elapsed / 0.5, f.stop.remaining / 0.5);   // fade in and out
+            drawPhotoCard(ctx, f.stop.stop.data, alpha);
+        }
+    },
+});
+```
+
+- The video is `duration` plus the sum of the stops (`fly.duration` is the total).
+- Stops that cannot be placed (a timestamp outside the recording, a place further than
+  `stopMaxOffTrack` from the track, no duration) are left out; `fly.flightPlan.stops` lists the
+  ones in use, in the order the trail reaches them, with their `start` and `end` times.
+- The camera settles for a moment after the trail stops and is at rest in the middle of a stop.
+- Stops work with every camera, including the static whole-route view.
+
+### Elevation profile
+
+`elevationProfile: true` adds a profile to the built-in panel. With your own `hud`, draw it where
+you like:
+
+```ts
+import { drawElevationProfile } from 'trail-flyover';
+
+hud: (ctx, f) => {
+    drawElevationProfile(ctx, f, { x: 60, y: f.height - 320, width: f.width - 120, height: 120 });
+    // f.profile holds the data (distance and elevation arrays, min, max) if you want your own drawing
+}
+```
+
+### Room for your panels
+
+Whole-route shots (the overviews and the static camera) keep the track clear of the panels. If
+yours are bigger than the built-in ones, or you want to respect the safe zones of a social
+network, say how much of the picture to keep free:
+
+```ts
+flight: { margins: { top: 0.2, bottom: 0.3, side: 0.07 } }   // fractions of the height / width
+```
+
+### Language
+
+The built-in panel and the status messages are English; `locale: 'cs'` switches them to Czech and
+`strings: { distance: 'Strecke', … }` replaces single texts. Errors thrown to the developer are
+always in English.
 
 ### React / Next.js
 
@@ -165,6 +230,7 @@ The static camera (`camera: 'static'`):
   considerably larger (an east–west route in the Story format).
 - The video is shorter: 8 s + 0.15 s/km, at most 24 s. `intro` is how long the empty map is shown,
   `outro` how long the finished line stays.
+- Any length from 3 s can be set (`flight.duration`), for every camera.
 - Small places disappear again after 3.5 s; towns stay as landmarks.
 
 ## Place names
@@ -182,6 +248,10 @@ each one appears at the moment the tip of the trail reaches it (not earlier).
 - Where labels would overlap, the more important one wins, then the one passed earlier. They
   cross-fade instead of swapping abruptly; near the edge of the picture a label fades out.
 - In the overview shots at both ends of a flight only towns remain.
+- **Your own markers**: a label can have its own `color` (the dot) and `icon` (a short text or
+  emoji before the name), e.g. `{ name: 'Sněžka', kind: 'peak', color: '#f97316', icon: '▲',
+  priority: 5 }`. With `priority` 4 or more a label is a landmark: never thinned out and kept in
+  the overviews.
 
 On the Tolmin–Koper track (253 places from OpenStreetMap around it), 68 places are within reach;
 a 60 s fly-over shows 31 of them, the 24 s static view 19.
@@ -306,6 +376,7 @@ src/core/        pure computation, no DOM (tested in Node)
   clean.ts       removal of GPS glitches (jumps, 0°/0°), tracks across the 180th meridian
   terrarium.ts   synchronous elevation model from AWS Terrarium tiles (free, keyless)
   urls.ts        cutting query strings (API keys) out of error messages
+  i18n.ts        texts of the built-in panel and status messages (en, cs)
 src/maplibre/
   player.ts      TrailFlyover: preview, prefetch, export
   basemaps.ts    basemaps as data
@@ -375,7 +446,6 @@ A 51 km track:
 
 - Export needs WebCodecs (Chrome, Edge, Firefox 130+, Safari 16.4+). MP4 with H.264 is preferred,
   otherwise HEVC, AV1 or VP9 is used.
-- The demo UI, default panel labels and error messages are in Czech.
 - Mobile devices will need a smaller tile cache and probably a lower export resolution.
 - The winter filter runs on the main thread. Moving it to a Web Worker would speed up the first
   pass on long tracks.

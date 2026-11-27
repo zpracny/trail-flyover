@@ -282,7 +282,7 @@ test('option extremes: duration, intro/outro longer than the video, pitch, range
         assert.ok(plan.meta.intro + plan.meta.outro <= plan.duration - 0.99, `${label}: intro ${plan.meta.intro} + outro ${plan.meta.outro} > duration ${plan.duration}`);
         assert.ok(Math.abs(plan.distanceAt(plan.duration) - plan.track.s.at(-1)!) < 1e-6, `${label}: the tip reaches the finish`);
     }
-    assert.equal(buildFlightPlan(pts, { duration: 1 }).duration, 6);
+    assert.equal(buildFlightPlan(pts, { duration: 1 }).duration, 3);
     assert.equal(buildFlightPlan(pts, { pitch: 90 }).meta.pitch, 82);
 });
 
@@ -354,7 +354,7 @@ test('120 seeded random tracks and option sets: always a finite, monotonic, boun
             plan = buildFlightPlan(pts, opts);
         } catch (err) {
             // Only "track too short" is an acceptable rejection.
-            assert.match((err as Error).message, /krátká|aspoň 2 body/, `${label}: ${(err as Error).message}`);
+            assert.match((err as Error).message, /too short|at least 2 points/, `${label}: ${(err as Error).message}`);
             continue;
         }
         assertFinitePlan(plan, label);

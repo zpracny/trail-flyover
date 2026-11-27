@@ -2,7 +2,8 @@
  * 2D overlay drawn on a canvas on top of the map, in output pixels.
  * Everything here is part of the exported video too.
  */
-import type { CameraPose, TrackStats } from '../core/flightPlan.ts';
+import type { ActiveStop, CameraPose, ElevationProfile, TrackStats } from '../core/flightPlan.ts';
+import { STRINGS, type Strings } from '../core/i18n.ts';
 import { smoothstep } from '../core/geo.ts';
 
 export interface ScreenPoint {
@@ -30,6 +31,14 @@ export interface HudFrame {
     subtitle: string;
     attribution: string;
     accent: string;
+    /** The stop the video is standing at (see `flight.stops`), or null. Draw your photo card here. */
+    stop: ActiveStop | null;
+    /** Elevation along the track for `drawElevationProfile`, or null when unknown. */
+    profile: ElevationProfile | null;
+    /** True when the player was asked for the built-in elevation profile (`elevationProfile: true`). */
+    showProfile: boolean;
+    /** Texts of the built-in panel in the player's language. */
+    strings: Strings;
 }
 
 export interface FlyoverLabel {
@@ -38,8 +47,12 @@ export interface FlyoverLabel {
     name: string;
     /** town / village / hamlet / peak / … — used for priority. */
     kind?: string;
-    /** Higher wins label collisions. Defaults from `kind`. */
+    /** Higher wins label collisions. Defaults from `kind`. From 4 up a label is a landmark: never thinned out, kept in overviews. */
     priority?: number;
+    /** Colour of the label's dot (any CSS colour). Default: the player's accent colour. */
+    color?: string;
+    /** Short text or emoji drawn in front of the name, e.g. "▲" for a summit. */
+    icon?: string;
 }
 
 /** Label enriched with its position along the track (set by the player). */
@@ -210,6 +223,11 @@ export interface LabelDrawOptions {
      */
     hold?: number;
     /**
+     * Parts of the picture where labels are not drawn (under the title, over the stats), as
+     * fractions of its height. Default top 0.12, bottom 0.14.
+     */
+    bands?: { top?: number; bottom?: number };
+    /**
      * Camera distance (m) of the follow flight. When the camera pulls back well beyond it (the
      * overview shots at both ends), small places fade out and only towns and the user's own
      * points remain — a village name means little on a map of the whole route.
@@ -231,7 +249,8 @@ export function drawLabels(
     // 1 while the camera is at flight distance, 0 from 3× further away.
     const detail = o.detailRange ? 1 - smoothstep((range / o.detailRange - 1.5) / 1.5) : 1;
     const s = f.scale;
-    const margin = 40 * s, soft = 36 * s, top = f.height * 0.12, bottom = f.height * 0.86;
+    const margin = 40 * s, soft = 36 * s;
+    const top = f.height * (o.bands?.top ?? 0.12), bottom = f.height * (1 - (o.bands?.bottom ?? 0.14));
     const candidates: Array<{ l: PlacedLabel; p: ScreenPoint; a: number; pr: number; reveal: number }> = [];
     for (const l of labels) {
         // Seconds since the trail tip got there (without a time: just "passed or not").
@@ -267,7 +286,8 @@ export function drawLabels(
     for (const c of candidates) {
         if (budget <= 0.02) break;
         const padX = 16 * s, h = fontSize + 18 * s, stem = 22 * s;
-        const w = ctx.measureText(c.l.name).width + padX * 2;
+        const text = c.l.icon ? `${c.l.icon} ${c.l.name}` : c.l.name;
+        const w = ctx.measureText(text).width + padX * 2;
         // The pill stays fully inside the picture; near an edge it slides sideways and the stem
         // still points at the place.
         const edge = 14 * s;
@@ -295,7 +315,7 @@ export function drawLabels(
         ctx.stroke();
         ctx.beginPath();
         ctx.arc(c.p.x, c.p.y, 6 * s, 0, Math.PI * 2);
-        ctx.fillStyle = f.accent;
+        ctx.fillStyle = c.l.color ?? f.accent;
         ctx.fill();
         ctx.lineWidth = 2 * s;
         ctx.strokeStyle = '#fff';
@@ -308,20 +328,93 @@ export function drawLabels(
         ctx.fill();
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#fff';
-        ctx.fillText(c.l.name, bx + w / 2, by + rise + h / 2 + 1 * s);
+        ctx.fillText(text, bx + w / 2, by + rise + h / 2 + 1 * s);
     }
     ctx.restore();
 }
 
-export function formatDistance(m: number) {
+/** "850 m", "9.99 km", "124.0 km". `decimal` is the separator ("," in Czech; see `Strings.decimal`). */
+export function formatDistance(m: number, decimal = '.') {
     // Thresholds sit where the rounded text changes width, so 9 999 m reads "10.0 km", not "10.00 km".
-    return m >= 9995 ? `${(m / 1000).toFixed(1)} km` : m >= 999.5 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`;
+    const text = m >= 9995 ? `${(m / 1000).toFixed(1)} km` : m >= 999.5 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`;
+    return decimal === '.' ? text : text.replace('.', decimal);
 }
 
 export function formatDuration(sec: number) {
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
     return h > 0 ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`;
+}
+
+export interface ProfileStyle {
+    /** Fill under the part already travelled. Default: the accent colour at 55 %. */
+    fill?: string;
+    /** Line on top of the travelled part. Default: the accent colour. */
+    line?: string;
+    /** Fill under the whole profile (the part still ahead shows through). Default: white at 22 %. */
+    ghost?: string;
+}
+
+/**
+ * Elevation profile in the given rectangle (output pixels): the whole route faintly, the part
+ * already travelled filled in, and a dot at the current position. Does nothing when the track
+ * has no elevations. For custom HUDs; the built-in panel uses it with `elevationProfile: true`.
+ */
+export function drawElevationProfile(
+    ctx: CanvasRenderingContext2D, f: HudFrame, rect: { x: number; y: number; width: number; height: number }, style: ProfileStyle = {},
+) {
+    const p = f.profile;
+    if (!p || p.distance.length < 2) return;
+    const n = p.distance.length;
+    const total = p.distance[n - 1];
+    if (!(total > 0)) return;
+    // A flat track still gets a visible band; a mountain stage uses the full height.
+    const span = Math.max(p.max - p.min, 30);
+    const X = (d: number) => rect.x + (d / total) * rect.width;
+    const Y = (e: number) => rect.y + rect.height - ((e - p.min) / span) * rect.height * 0.92 - rect.height * 0.04;
+    const base = rect.y + rect.height;
+    const tipD = Math.min(Math.max(f.stats.distance, 0), total);
+    // Elevation at the tip, interpolated between profile points.
+    let k = 1;
+    while (k < n - 1 && p.distance[k] < tipD) k++;
+    const d0 = p.distance[k - 1], d1 = p.distance[k];
+    const tipE = p.elevation[k - 1] + (d1 > d0 ? ((tipD - d0) / (d1 - d0)) * (p.elevation[k] - p.elevation[k - 1]) : 0);
+
+    const area = (upTo: number, withTip: boolean) => {
+        ctx.beginPath();
+        ctx.moveTo(rect.x, base);
+        for (let i = 0; i < upTo; i++) ctx.lineTo(X(p.distance[i]), Y(p.elevation[i]));
+        if (withTip) {
+            ctx.lineTo(X(tipD), Y(tipE));
+            ctx.lineTo(X(tipD), base);
+        } else {
+            ctx.lineTo(rect.x + rect.width, base);
+        }
+        ctx.closePath();
+    };
+    ctx.save();
+    ctx.shadowBlur = 0;
+    area(n, false);
+    ctx.fillStyle = style.ghost ?? 'rgba(255,255,255,0.22)';
+    ctx.fill();
+    if (tipD > 0) {
+        const done = p.distance[k - 1] < tipD ? k : k - 1;
+        area(done, true);
+        ctx.fillStyle = style.fill ?? withAlpha(f.accent, 0.55);
+        ctx.fill();
+        ctx.beginPath();
+        for (let i = 0; i < done; i++) (i ? ctx.lineTo(X(p.distance[i]), Y(p.elevation[i])) : ctx.moveTo(X(p.distance[i]), Y(p.elevation[i])));
+        ctx.lineTo(X(tipD), Y(tipE));
+        ctx.lineWidth = 2.5 * f.scale;
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = style.line ?? f.accent;
+        ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(X(tipD), Y(tipE), 5 * f.scale, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.restore();
 }
 
 /**
@@ -364,6 +457,7 @@ function drawFitted(ctx: CanvasRenderingContext2D, text: string, x: number, y: n
  */
 export function drawDefaultHud(ctx: CanvasRenderingContext2D, f: HudFrame) {
     const { width: W, height: H, scale: s } = f;
+    const t = f.strings ?? STRINGS.en;
     ctx.save();
 
     // Soft vignettes for legibility
@@ -372,11 +466,14 @@ export function drawDefaultHud(ctx: CanvasRenderingContext2D, f: HudFrame) {
     g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H * 0.2);
-    g = ctx.createLinearGradient(0, H * 0.78, 0, H);
+    // With the elevation profile the bottom panel is taller.
+    const profileOn = f.showProfile && f.profile !== null;
+    const shade = profileOn ? 0.68 : 0.78;
+    g = ctx.createLinearGradient(0, H * shade, 0, H);
     g.addColorStop(0, 'rgba(0,0,0,0)');
     g.addColorStop(1, 'rgba(0,0,0,0.55)');
     ctx.fillStyle = g;
-    ctx.fillRect(0, H * 0.78, W, H * 0.22);
+    ctx.fillRect(0, H * shade, W, H * (1 - shade));
 
     const m = 44 * s;
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
@@ -391,14 +488,18 @@ export function drawDefaultHud(ctx: CanvasRenderingContext2D, f: HudFrame) {
 
     // Stats row
     const cells: Array<[string, string]> = [
-        [formatDistance(f.stats.distance), 'vzdálenost'],
-        [`${Math.round(f.stats.ascent)} m`, 'stoupání'],
+        [formatDistance(f.stats.distance, t.decimal), t.distance],
+        [`${Math.round(f.stats.ascent)} m`, t.ascent],
     ];
     // Moving time (stops left out) is what sport apps show; fall back to the recorded time.
-    if (f.stats.moving !== null) cells.push([formatDuration(f.stats.moving), 'čas v pohybu']);
-    else if (f.stats.elapsed !== null) cells.push([formatDuration(f.stats.elapsed), 'čas']);
-    else if (Number.isFinite(f.stats.elevation)) cells.push([`${Math.round(f.stats.elevation)} m n. m.`, 'výška']);
+    if (f.stats.moving !== null) cells.push([formatDuration(f.stats.moving), t.movingTime]);
+    else if (f.stats.elapsed !== null) cells.push([formatDuration(f.stats.elapsed), t.time]);
+    else if (Number.isFinite(f.stats.elevation)) cells.push([`${Math.round(f.stats.elevation)} ${t.aboveSeaLevel}`, t.elevation]);
     const baseY = H - m - 34 * s;
+    if (profileOn) {
+        const ph = 96 * s;
+        drawElevationProfile(ctx, f, { x: m, y: baseY - 58 * s - ph, width: W - 2 * m, height: ph });
+    }
     const cellW = (W - 2 * m) / cells.length;
     cells.forEach(([value, label], i) => {
         const x = m + i * cellW;

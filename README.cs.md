@@ -27,7 +27,7 @@ npm run build:lib                   # balíček pro aplikace: dist/ (JavaScript 
 npm run compare                     # srovnání plynulosti se současnou kamerou TrailMetrics
 ```
 
-Testy: 87 testů za ~10 s na skutečném záznamu 121 km, jeho 46km úseku a na umělých i náhodných
+Testy: 98 testů za ~10 s na skutečném záznamu 121 km, jeho 46km úseku a na umělých i náhodných
 trasách. Stejnou kontrolu spouští GitHub Actions u každého pushe.
 
 ## Instalace do aplikace
@@ -36,12 +36,12 @@ Balíček zatím není na npm. Instaluje se vydaná verze z GitHubu, `maplibre-g
 dodává aplikace:
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.1.0/trail-flyover-0.1.0.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.2.0/trail-flyover-0.2.0.tgz maplibre-gl
 ```
 
 Je to hotový přeložený balíček (ES moduly s typovými deklaracemi v `dist/`), v lockfile připnutý
 kontrolním součtem. Funguje i instalace přímo z gitu
-(`npm install github:zpracny/trail-flyover#v0.1.0`); npm pak balíček při instalaci sestaví.
+(`npm install github:zpracny/trail-flyover#v0.2.0`); npm pak balíček při instalaci sestaví.
 Na sestavovacích serverech je lepší balíček z vydání: instalaci z gitu npm zapíše jako
 `git+ssh://`, a ta tam potřebuje SSH klíč.
 
@@ -118,6 +118,7 @@ const fly = new TrailFlyover(element, {
     basemap: 'esri-satellite',                   // nebo 'cuzk-ortofoto', 'esri-light', vlastní BasemapDef…
     flight: { preset: 'drone', duration: 30 },   // drone | low | overview; camera: 'static' = celá trasa
     labels: [{ lon: 13.733, lat: 46.183, name: 'Tolmin', kind: 'town' }],   // ukážou se jen ta na trase
+    locale: 'cs',                                // texty panelu česky (výchozí je angličtina)
 });
 await fly.load(parseGpx(gpxText).points, { title: 'Tolmin – Koper', subtitle: '13. června 2026' });
 
@@ -137,7 +138,7 @@ Přehrávač počítá s tím, že ho aplikace volá rychle za sebou (posuvníky
   trasa, starší volání se dokončí bez práce.
 - `update()` jde volat ještě během `load()`. Neplatná změna (neznámý podklad, chybějící klíč)
   skončí chybou a nic nezmění.
-- Během exportu a přednačítání `load()`, `update()` a další export skončí chybou „Probíhá export…“.
+- Během exportu a přednačítání `load()`, `update()` a další export skončí chybou „An export or prefetch is in progress…“.
   `seek()` a `play()` se v té době ignorují.
 - `destroy()` jde zavolat kdykoli, i uprostřed načítání nebo exportu. Rozpracované načítání se
   zahodí a nevznikne žádná mapa navíc; export skončí chybou `AbortError`.
@@ -159,6 +160,69 @@ new TrailFlyover(el, {
     },
 });
 ```
+
+### Zastávky: pozastavení letu kvůli fotce
+
+Letu jde zadat místa, kde se má zastavit. Linka i kamera plynule zpomalí, zadanou dobu stojí
+a zase se rozjedou; co se tam má ukázat (karta s fotkou, poznámka), nakreslí aplikace ve své
+funkci `hud`.
+
+```ts
+const fly = new TrailFlyover(el, {
+    maplibregl,
+    flight: {
+        duration: 30,                                   // samotný let; zastávky se přičítají
+        stops: [
+            { time: photo.takenAt, duration: 3, data: photo },          // podle času záznamu…
+            { lon: 13.65, lat: 45.96, duration: 5, data: gallery },     // …podle místa (první průjezd do 500 m)…
+            { distance: 60_000, duration: 2 },                          // …nebo podle metrů od startu
+        ],
+    },
+    hud: (ctx, f) => {
+        drawMyStats(ctx, f);
+        if (f.stop) {
+            // f.stop.stop.data je to, co jsi předal; elapsed / remaining / progress říkají, kde v zastávce jsme
+            const alpha = Math.min(1, f.stop.elapsed / 0.5, f.stop.remaining / 0.5);   // prolnutí
+            drawPhotoCard(ctx, f.stop.stop.data, alpha);
+        }
+    },
+});
+```
+
+- Video trvá `duration` plus součet zastávek (`fly.duration` je celková délka).
+- Zastávky, které nejde umístit (čas mimo záznam, místo dál než `stopMaxOffTrack` od trasy, žádná
+  délka), se vynechají; `fly.flightPlan.stops` vypíše ty použité v pořadí, v jakém k nim linka
+  dojede, s časy `start` a `end`.
+- Kamera se po zastavení linky ještě chvilku usazuje, uprostřed zastávky stojí.
+- Zastávky fungují s každou kamerou, i se statickým pohledem na celou trasu.
+
+### Graf převýšení
+
+`elevationProfile: true` přidá profil do vestavěného panelu. S vlastním `hud` ho nakresli, kam chceš:
+
+```ts
+import { drawElevationProfile } from 'trail-flyover';
+
+hud: (ctx, f) => {
+    drawElevationProfile(ctx, f, { x: 60, y: f.height - 320, width: f.width - 120, height: 120 });
+    // f.profile obsahuje data (pole vzdáleností a výšek, min, max) pro vlastní kreslení
+}
+```
+
+### Místo pro vlastní panely
+
+Záběry na celou trasu (přehledy a statická kamera) drží trasu mimo panely. Když jsou tvoje větší
+než vestavěné, nebo chceš respektovat bezpečné zóny sociální sítě, řekni, kolik obrazu nechat volné:
+
+```ts
+flight: { margins: { top: 0.2, bottom: 0.3, side: 0.07 } }   // zlomky výšky / šířky
+```
+
+### Jazyk
+
+Vestavěný panel a stavové hlášky jsou anglicky; `locale: 'cs'` je přepne do češtiny
+a `strings: { distance: 'Strecke', … }` nahradí jednotlivé texty. Chyby pro vývojáře jsou vždy
+anglicky.
 
 ### React / Next.js
 
@@ -209,6 +273,7 @@ Statická kamera (`camera: 'static'`):
   výrazně zvětší (východozápadní trasa ve formátu Story).
 - Video je kratší: 8 s + 0,15 s/km, nejvýš 24 s. `intro` je doba, po kterou je vidět prázdná
   mapa, `outro` doba, po kterou zůstane hotová linka.
+- Délku jde nastavit od 3 s (`flight.duration`), u každé kamery.
 - Malá místa po 3,5 s zase zmizí, města zůstávají jako orientační body.
 
 ## Názvy míst
@@ -226,6 +291,9 @@ a každé se objeví ve chvíli, kdy k němu čelo trasy dojede (ne dřív).
 - Kde by se štítky překrývaly, má přednost důležitější a pak dřív projeté místo. Střídají se
   prolnutím, ne skokem; u okraje obrazu štítek plynule mizí.
 - V přehledových záběrech na začátku a na konci průletu zůstávají jen města.
+- **Vlastní značky**: štítek může mít vlastní `color` (tečka) a `icon` (krátký text nebo emoji
+  před názvem), např. `{ name: 'Sněžka', kind: 'peak', color: '#f97316', icon: '▲', priority: 5 }`.
+  S `priority` 4 a víc je štítek orientační bod: nikdy se nevynechá a zůstává i v přehledech.
 
 Na trase Tolmin–Koper (253 míst z OpenStreetMap v okolí) zůstane v dosahu 68 míst;
 při 60s průletu se jich ukáže 31, při 24s statickém záběru 19.
@@ -356,7 +424,6 @@ Trasa 51 km:
 - U velmi dlouhých tras by pomohla proměnná rychlost: zpomalit v horách a u cíle, zrychlit na rovině.
 - Převod do TrailMetrics: nahradit `story3DCamera.ts` voláním `buildFlightPlan` a `Story3DEngine`
   přehrávačem s vlastním HUD.
-- Rozhraní dema, popisky výchozího panelu a chybové hlášky jsou česky.
 
 ## Bezpečnost
 

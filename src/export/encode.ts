@@ -46,7 +46,7 @@ export async function canEncode(format: VideoFormat, width: number, height: numb
 
 export async function encodeVideo(o: EncodeOptions): Promise<EncodedVideo> {
     const codec = await canEncode(o.format, o.width, o.height);
-    if (!codec) throw new Error(`Prohlížeč neumí zakódovat ${o.format.toUpperCase()} ${o.width}×${o.height} (WebCodecs).`);
+    if (!codec) throw new Error(`This browser cannot encode ${o.format.toUpperCase()} ${o.width}×${o.height} (WebCodecs).`);
 
     const canvas = new OffscreenCanvas(o.width, o.height);
     const ctx = canvas.getContext('2d')!;
@@ -61,7 +61,7 @@ export async function encodeVideo(o: EncodeOptions): Promise<EncodedVideo> {
 
     try {
         for (let i = 0; i < o.frameCount; i++) {
-            if (o.signal?.aborted) throw new DOMException('Export zrušen', 'AbortError');
+            if (o.signal?.aborted) throw new DOMException('Export cancelled', 'AbortError');
             await o.drawFrame(i, ctx);
             await source.add(i / o.fps, 1 / o.fps);
             o.onProgress?.((i + 1) / o.frameCount);

@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="cs">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Trail Flyover — prototyp</title>
+<title>Trail Flyover — demo</title>
 <link rel="stylesheet" href="dist/maplibre-gl.css">
 <style>
   :root { --bg:#0f1115; --panel:#171a21; --line:#262a33; --text:#e9ecf1; --muted:#9aa3b2; --accent:#ff7a1a; }
@@ -43,70 +43,72 @@
 <div class="app">
   <aside>
     <h1>Trail Flyover</h1>
-    <div class="sub">Prototyp 3D průletu nad trasou · MapLibre</div>
+    <div class="sub">3D fly-over of a GPS track · MapLibre · <a href="https://github.com/zpracny/trail-flyover" style="color:#ffb27a">GitHub</a></div>
 
-    <h2>Trasa</h2>
+    <h2>Track</h2>
     <input type="file" id="gpx" accept=".gpx" hidden>
     <select id="sample">
-      <option value="tolmin.gpx">Tolmin → Gorica → Koper (121 km)</option>
+      <option value="tolmin.gpx">Tolmin → Gorizia → Koper (121 km)</option>
     </select>
-    <button class="btn" id="openGpx" style="width:100%;margin-top:6px">📂 Načíst vlastní GPX…</button>
+    <button class="btn" id="openGpx" style="width:100%;margin-top:6px">📂 Open your own GPX…</button>
     <div class="hint" id="trackInfo"></div>
 
-    <h2>Zobrazení</h2>
+    <h2>View</h2>
     <div class="seg" id="mode">
-      <button data-v="3d" aria-pressed="true">3D terén</button>
-      <button data-v="2d">2D mapa</button>
+      <button data-v="3d" aria-pressed="true">3D terrain</button>
+      <button data-v="2d">2D map</button>
     </div>
 
-    <h2>Pohyb kamery</h2>
+    <h2>Camera movement</h2>
     <div class="seg" id="camera">
-      <button data-v="follow" aria-pressed="true">Letí s trasou</button>
-      <button data-v="static">Celá trasa (stojí)</button>
+      <button data-v="follow" aria-pressed="true">Follows the track</button>
+      <button data-v="static">Whole route (static)</button>
     </div>
 
-    <h2>Poměr stran</h2>
+    <h2>Aspect ratio</h2>
     <div class="seg" id="aspect">
       <button data-v="story">Story 9:16</button>
       <button data-v="feed" aria-pressed="true">Feed 4:5</button>
       <button data-v="wide">Wide 16:9</button>
     </div>
 
-    <h2>Mapový podklad</h2>
+    <h2>Basemap</h2>
     <select id="basemap"></select>
     <div class="hint" id="basemapHint"></div>
 
-    <label class="check"><input type="checkbox" id="snow"> ❄️ Zimní filtr (zasněžená krajina)</label>
+    <label class="check"><input type="checkbox" id="snow"> ❄️ Winter filter (snowy landscape)</label>
     <div id="snowBox" hidden>
-      <label class="row">Sněhová čára <b id="snowlineLabel">všude</b></label>
+      <label class="row">Snow line <b id="snowlineLabel">everywhere</b></label>
       <input type="range" id="snowline" min="0" max="1300" step="50" value="0">
-      <div class="hint">0 = sníh všude; jinak pod danou výškou zůstane léto</div>
+      <div class="hint">0 = snow everywhere; otherwise summer stays below this elevation</div>
     </div>
 
-    <h2>Kamera</h2>
+    <h2>Camera</h2>
     <div class="seg" id="preset">
-      <button data-v="drone" aria-pressed="true">Dron</button>
-      <button data-v="low">Nízký průlet</button>
-      <button data-v="overview">Přehled</button>
+      <button data-v="drone" aria-pressed="true">Drone</button>
+      <button data-v="low">Low flight</button>
+      <button data-v="overview">Overview</button>
     </div>
-    <label class="row">Délka videa <b id="durLabel">auto</b></label>
+    <label class="row">Video length <b id="durLabel">auto</b></label>
     <input type="range" id="duration" min="0" max="60" step="1" value="0">
-    <div class="hint">0 = automaticky podle délky trasy</div>
-    <label class="row">Převýšení terénu <b id="exLabel">1.4×</b></label>
+    <div class="hint">0 = automatic, by track length (stops come on top)</div>
+    <label class="row">Terrain exaggeration <b id="exLabel">1.4×</b></label>
     <input type="range" id="exaggeration" min="1" max="2.5" step="0.1" value="1.4">
-    <label class="check"><input type="checkbox" id="labels" checked> Názvy obcí a vrcholů (OSM)</label>
-    <label class="row">Jen místa u trasy <b id="reachLabel">vesnice do 400 m</b></label>
+    <label class="check"><input type="checkbox" id="labels" checked> Names of towns and peaks (OSM)</label>
+    <label class="row">Only places on the route <b id="reachLabel">villages within 400 m</b></label>
     <input type="range" id="reach" min="50" max="400" step="25" value="100">
-    <div class="hint">Název se objeví ve chvíli, kdy k místu trasa dojede.</div>
-    <label class="check"><input type="checkbox" id="ghost" checked> Zbytek trasy slabě dopředu</label>
+    <div class="hint">A name appears at the moment the trail reaches the place.</div>
+    <label class="check"><input type="checkbox" id="profile"> Elevation profile</label>
+    <label class="check"><input type="checkbox" id="stops"> Stops for photos (3 sample stops)</label>
+    <label class="check"><input type="checkbox" id="ghost" checked> Rest of the route shown faintly</label>
 
     <h2>Export</h2>
-    <button class="btn" id="prefetch" style="width:100%">⤓ Přednačíst dlaždice pro plynulé přehrání</button>
+    <button class="btn" id="prefetch" style="width:100%">⤓ Preload tiles for smooth playback</button>
     <div class="grid2">
       <button class="btn primary" id="exportMp4">Video MP4</button>
       <button class="btn" id="exportWebm">Video WebM</button>
-      <button class="btn" id="exportPng">Fotka PNG</button>
-      <button class="btn" id="cancel" disabled>Zrušit</button>
+      <button class="btn" id="exportPng">Image PNG</button>
+      <button class="btn" id="cancel" disabled>Cancel</button>
     </div>
     <div class="status" id="status"></div>
     <div class="progress"><i id="progress"></i></div>
@@ -117,7 +119,7 @@
   <main>
     <div id="stage"></div>
     <div class="bar">
-      <button class="btn primary" id="play" style="min-width:110px">▶ Přehrát</button>
+      <button class="btn primary" id="play" style="min-width:110px">▶ Play</button>
       <input type="range" id="scrub" min="0" max="1000" value="0">
       <span class="time" id="time">0.0 / 0.0 s</span>
     </div>

@@ -25,6 +25,7 @@ import {
 import { encodeVideo, type VideoFormat, type EncodedVideo } from '../export/encode.ts';
 import { registerSnowProtocol, snowTileUrl, type SnowOptions } from '../effects/snow.ts';
 import { errorText } from '../core/urls.ts';
+import { resolveStrings, type Locale, type Strings } from '../core/i18n.ts';
 
 type MapLibreGL = typeof MapLibre;
 
@@ -69,6 +70,15 @@ export interface TrailFlyoverOptions {
     colors?: { trail?: string; casing?: string; ghost?: string; accent?: string };
     /** Show the remaining route faintly ahead of the tip. Default true. */
     ghostTrail?: boolean;
+    /**
+     * Elevation profile in the built-in panel, above the stats. Default false. With your own
+     * `hud`, draw it yourself with `drawElevationProfile(ctx, f, rect)`.
+     */
+    elevationProfile?: boolean;
+    /** Language of the built-in panel and of status messages: 'en' (default) or 'cs'. */
+    locale?: Locale;
+    /** Your own texts, on top of the locale's (see `Strings`). */
+    strings?: Partial<Strings>;
     /** Overlay panel (title, stats). false = none, function = your own. Default built-in. */
     hud?: false | HudRenderer;
     terrainUrl?: string;
@@ -220,7 +230,8 @@ export class TrailFlyover {
         const basemap = styleChanged ? resolveBasemap(next.basemap ?? 'esri-satellite', next.apiKeys) : this.basemap;
         this.opts = next;
         this.basemap = basemap;
-        const needsPlan = patch.flight !== undefined || patch.exaggeration !== undefined || patch.mode !== undefined;
+        const needsPlan = patch.flight !== undefined || patch.exaggeration !== undefined || patch.mode !== undefined
+            || 'elevationProfile' in patch || 'hud' in patch;
         // `in`, not `!== undefined`: passing undefined resets the option to its default.
         const needsLabels = 'labels' in patch || 'labelReach' in patch || 'labelMinGap' in patch;
         const gen = needsPlan && this.points.length ? ++this.gen : this.gen;
@@ -297,14 +308,14 @@ export class TrailFlyover {
             const plan = this.requirePlan();
             this.pause();
             back = this.t;
-            this.setBusy(true, 'Načítám mapové dlaždice…');
+            this.setBusy(true, this.strings().statusTiles);
             const dt = Math.min(1, Math.max(0.2, (plan.meta.range * 0.45) / plan.meta.followSpeed));
             const times: number[] = [];
             // A static camera sees the same tiles the whole time.
             if (plan.meta.camera === 'follow') for (let t = 0; t < plan.duration; t += dt) times.push(t);
             times.push(plan.duration);
             for (let i = 0; i < times.length; i++) {
-                if (signal?.aborted || this.destroyed) throw new DOMException('Zrušeno', 'AbortError');
+                if (signal?.aborted || this.destroyed) throw new DOMException('Cancelled', 'AbortError');
                 this.applyCamera(times[i]);
                 await this.settle(5000);
                 onProgress?.((i + 1) / times.length);
@@ -323,9 +334,9 @@ export class TrailFlyover {
             const plan = this.requirePlan();
             this.pause();
             const fps = o.fps ?? 30;
-            if (!(fps >= 1 && fps <= 120)) throw new Error(`Neplatná snímková frekvence: ${fps}`);
+            if (!(fps >= 1 && fps <= 120)) throw new Error(`Invalid frame rate: ${fps} (allowed 1–120)`);
             back = this.t;
-            this.setBusy(true, 'Renderuji video…', true);
+            this.setBusy(true, this.strings().statusVideo, true);
             let slowFrames = 0;
             return await encodeVideo({
                 format: o.format ?? 'mp4',
@@ -337,7 +348,7 @@ export class TrailFlyover {
                 signal: o.signal,
                 onProgress: o.onProgress,
                 drawFrame: async (i, ctx) => {
-                    if (this.destroyed) throw new DOMException('Přehrávač byl zrušen', 'AbortError');
+                    if (this.destroyed) throw new DOMException('The player was destroyed', 'AbortError');
                     const t = Math.min(plan.duration, i / fps);
                     this.t = t;
                     const pose = this.applyCamera(t);
@@ -346,7 +357,7 @@ export class TrailFlyover {
                     // settle() ends with a fresh redraw of exactly this camera.
                     const ok = await this.settle(slowFrames > 3 ? 1500 : 6000);
                     if (!ok) slowFrames++;
-                    if (this.destroyed) throw new DOMException('Přehrávač byl zrušen', 'AbortError');
+                    if (this.destroyed) throw new DOMException('The player was destroyed', 'AbortError');
                     this.drawHud(t, pose);
                     ctx.drawImage(this.map!.getCanvas(), 0, 0, this.output.width, this.output.height);
                     ctx.drawImage(this.hudCanvas, 0, 0);
@@ -367,12 +378,12 @@ export class TrailFlyover {
             const plan = this.requirePlan();
             this.pause();
             at = Math.max(0, Math.min(plan.duration, t ?? this.t));
-            this.setBusy(true, 'Renderuji fotku…', true);
+            this.setBusy(true, this.strings().statusImage, true);
             this.t = at;
             const pose = this.applyCamera(at);
             this.updateSegments(plan.distanceAt(at));
             await this.settle(8000);
-            if (this.destroyed) throw new DOMException('Přehrávač byl zrušen', 'AbortError');
+            if (this.destroyed) throw new DOMException('The player was destroyed', 'AbortError');
             this.drawHud(at, pose);
             const c = document.createElement('canvas');
             c.width = this.output.width;
@@ -415,14 +426,14 @@ export class TrailFlyover {
     }
 
     private requirePlan(): FlightPlan {
-        if (this.destroyed) throw new Error('Přehrávač byl zrušen (destroy).');
-        if (!this.plan || !this.map) throw new Error('Nejdřív zavolej load().');
+        if (this.destroyed) throw new Error('The player was destroyed.');
+        if (!this.plan || !this.map) throw new Error('Call load() first.');
         return this.plan;
     }
 
     private assertIdle() {
-        if (this.destroyed) throw new Error('Přehrávač byl zrušen (destroy).');
-        if (this.busy) throw new Error('Probíhá export nebo přednačítání. Počkej na dokončení, nebo ho zruš.');
+        if (this.destroyed) throw new Error('The player was destroyed.');
+        if (this.busy) throw new Error('An export or prefetch is in progress. Wait for it to finish, or cancel it.');
     }
 
     /** Runs jobs strictly one after another, whatever the previous one's outcome. */
@@ -478,9 +489,20 @@ export class TrailFlyover {
 
     /** Flight options after applying the mode (2D = top-down, north-up, flat; `flight.camera` picks follow or static). */
     private flightOptions(): Omit<FlightOptions, 'terrain' | 'aspect' | 'exaggeration'> {
-        const f = this.opts.flight ?? {};
+        const f = { ...this.opts.flight, margins: this.margins() };
         if (!this.is2d()) return f;
         return { ...f, preset: 'topdown', pitch: f.pitch ?? 0, northUp: f.northUp ?? true };
+    }
+
+    /** Space kept free of the track in whole-route shots; the built-in profile needs a taller bottom panel. */
+    private margins() {
+        const m = this.opts.flight?.margins ?? {};
+        const builtInProfile = this.opts.elevationProfile === true && typeof this.opts.hud !== 'function' && this.opts.hud !== false;
+        return { top: m.top ?? 0.14, bottom: m.bottom ?? (builtInProfile ? 0.3 : 0.19), side: m.side ?? 0.07 };
+    }
+
+    private strings(): Strings {
+        return resolveStrings(this.opts.locale, this.opts.strings);
     }
 
     private async rebuild(gen: number, keepFraction = 0) {
@@ -489,7 +511,7 @@ export class TrailFlyover {
         const points = this.points;
         const exaggeration = this.is2d() ? 0 : this.opts.exaggeration ?? 1.4;
         const aspect = this.output.width / this.output.height;
-        this.emit('status', 'Počítám dráhu kamery…');
+        this.emit('status', this.strings().statusPlanning);
         // 1) quick plan without DEM → camera distance → how much terrain around the track we need
         const flight = this.flightOptions();
         const rough = buildFlightPlan(points, { ...flight, aspect, exaggeration });
@@ -498,7 +520,7 @@ export class TrailFlyover {
         const abort = new AbortController();
         this.loadAbort = abort;
         try {
-            this.emit('status', 'Načítám výškový model…');
+            this.emit('status', this.strings().statusElevation);
             const lon = rough.track.lon, lat = rough.track.lat;
             let west = Infinity, east = -Infinity, south = Infinity, north = -Infinity;
             for (let i = 0; i < lon.length; i++) {
@@ -590,7 +612,7 @@ export class TrailFlyover {
         const parts = [this.basemap.attribution];
         const fb = this.fallbackDef();
         if (fb) parts.push(fb.attribution);
-        if (!this.is2d() || (this.opts.snow && this.opts.snow.snowline != null)) parts.push('terén: AWS Terrain Tiles');
+        if (!this.is2d() || (this.opts.snow && this.opts.snow.snowline != null)) parts.push(this.strings().terrainCredit);
         return parts.join(' · ');
     }
 
@@ -626,14 +648,14 @@ export class TrailFlyover {
         // and a single failed tile (slow server, no coverage) must not fail the whole load.
         try {
             await new Promise<void>((resolve, reject) => {
-                const timer = setTimeout(() => reject(new Error('Mapa se nenačetla (časový limit 20 s).')), 20000);
+                const timer = setTimeout(() => reject(new Error('The map did not load (20 s timeout).')), 20000);
                 const done = () => { clearTimeout(timer); resolve(); };
                 map.once('style.load', done);
                 map.once('load', done);
                 map.on('error', e => {
                     const ev = e as unknown as { sourceId?: string; tile?: unknown; error?: Error };
                     if (ev.sourceId || ev.tile) return; // tile/source problem, the style itself is fine
-                    if (!map.isStyleLoaded()) { clearTimeout(timer); reject(ev.error ?? new Error('Mapu se nepodařilo vytvořit.')); }
+                    if (!map.isStyleLoaded()) { clearTimeout(timer); reject(ev.error ?? new Error('The map could not be created.')); }
                 });
             });
         } catch (err) {
@@ -646,7 +668,7 @@ export class TrailFlyover {
         }
         // Only the message, with URLs cut at the query string: tile URLs may carry an API key.
         map.on('error', e => console.warn('[TrailFlyover] map error:', errorText(e.error ?? e)));
-        map.on('webglcontextlost', () => this.emit('status', 'Grafická karta přerušila vykreslování, obnovuji…'));
+        map.on('webglcontextlost', () => this.emit('status', this.strings().statusContextLost));
         map.on('webglcontextrestored', () => {
             this.emit('status', '');
             this.renderFrame(this.t);
@@ -899,11 +921,18 @@ export class TrailFlyover {
             subtitle: this.meta.subtitle,
             attribution: this.attribution(),
             accent: c.accent,
+            stop: plan.stopAt(t),
+            profile: plan.profile,
+            showProfile: this.opts.elevationProfile === true,
+            strings: this.strings(),
         };
+        // Labels keep clear of the panels: a little inside the margins the track itself respects.
+        const mg = this.margins();
+        const bands = { top: Math.max(0, mg.top - 0.02), bottom: Math.max(0, mg.bottom - 0.05) };
         // With a static camera nothing ever leaves the picture: small places fade out again after a
         // while, towns stay as landmarks. A flying camera shows small places only at flight distance,
         // not in the overview shots at both ends.
-        drawLabels(ctx, this.labels, frame, tipS, plan.meta.camera === 'static' ? { maxLabels: 12, hold: 3.5 } : { detailRange: plan.meta.range });
+        drawLabels(ctx, this.labels, frame, tipS, plan.meta.camera === 'static' ? { maxLabels: 12, hold: 3.5, bands } : { detailRange: plan.meta.range, bands });
         if (tip) drawTip(ctx, tip, scale, c.accent);
         if (this.opts.hud !== false) (this.opts.hud ?? drawDefaultHud)(ctx, frame);
     }
