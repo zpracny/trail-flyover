@@ -46,7 +46,7 @@ npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.2/tr
 
 Je to hotový přeložený balíček (ES moduly s typovými deklaracemi v `dist/`), v lockfile připnutý
 kontrolním součtem. Funguje i instalace přímo z gitu
-(`npm install github:zpracny/trail-flyover#v0.5.1`); npm pak balíček při instalaci sestaví.
+(`npm install github:zpracny/trail-flyover#v0.5.2`); npm pak balíček při instalaci sestaví.
 Na sestavovacích serverech je lepší balíček z vydání: instalaci z gitu npm zapíše jako
 `git+ssh://`, a ta tam potřebuje SSH klíč.
 
