@@ -1,0 +1,6 @@
+node_modules/
+demo/dist/
+# copied from test/fixtures by the build
+demo/*.gpx
+demo/*.places.json
+out/

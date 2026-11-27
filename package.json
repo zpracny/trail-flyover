@@ -1,0 +1,33 @@
+{
+  "name": "trail-flyover",
+  "version": "0.1.0",
+  "description": "Plynulý 3D průlet nad GPS trasou (MapLibre) s exportem videa MP4/WebM",
+  "license": "MIT",
+  "author": "Zdenek Pracny",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zpracny/trail-flyover.git"
+  },
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "serve": "python3 scripts/devserver.py 8811",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "compare": "node scripts/compare-smoothness.ts"
+  },
+  "peerDependencies": {
+    "maplibre-gl": ">=5.0.0"
+  },
+  "dependencies": {
+    "mediabunny": "^1.66.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.11",
+    "esbuild": "^0.28.2",
+    "maplibre-gl": "^6.19.0",
+    "typescript": "^7.0.2"
+  }
+}
