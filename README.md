@@ -55,6 +55,8 @@ npm install https://github.com/zpracny/trail-flyover/releases/download/v0.1.0/tr
 That is a ready-built package (ES modules with type declarations in `dist/`), pinned by a
 checksum in your lockfile. Installing straight from git also works
 (`npm install github:zpracny/trail-flyover#v0.1.0`); npm then builds the package on install.
+Prefer the tarball on build servers: npm records a git install as `git+ssh://`, which needs an
+SSH key there.
 
 Verified: type-checking with TypeScript 5.7 (`moduleResolution: "bundler"`, strict or not),
 bundling with esbuild, importing the core in Node. Not tried yet: a full Next.js or Vite build.
