@@ -40,28 +40,6 @@ export function computeBearing(from: [number, number], to: [number, number]): nu
 }
 
 /**
- * Compute zoom level that fits a bounding box into the given canvas size.
- */
-function computeZoomForBbox(
-    bbox: { minLat: number; maxLat: number; minLng: number; maxLng: number },
-    canvasW: number,
-    canvasH: number,
-    pitch: number
-): number {
-    const latSpan = bbox.maxLat - bbox.minLat;
-    const lngSpan = bbox.maxLng - bbox.minLng;
-    if (latSpan === 0 && lngSpan === 0) return 14;
-
-    const pitchFactor = Math.cos(pitch * Math.PI / 180);
-    const effectiveH = canvasH * pitchFactor;
-
-    const zoomLat = Math.log2(effectiveH / (latSpan * 512 / 360)) - 0.5;
-    const zoomLng = Math.log2(canvasW / (lngSpan * 512 / 360)) - 0.5;
-
-    return Math.max(8, Math.min(16, Math.min(zoomLat, zoomLng)));
-}
-
-/**
  * Compute cumulative haversine distances along a trail (meters).
  */
 export function buildCumDists(latlngs: [number, number][]): number[] {

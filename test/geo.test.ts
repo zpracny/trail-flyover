@@ -89,7 +89,10 @@ test('gaussianSmooth: the fast path for wide kernels matches the direct convolut
         return out;
     };
     let seed = 7;
-    const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+    const rnd = () => {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        return seed / 4294967296;
+    };
     // 71 is the last sigma on the direct path, 72 the first on the fast one.
     for (const [n, sigma] of [[4000, 71], [4000, 72], [4000, 100], [2500, 500], [600, 2000], [40, 400]] as const) {
         const v = new Float64Array(n);

@@ -191,7 +191,8 @@ export class TrailFlyover {
 
     on<K extends keyof EventMap>(type: K, fn: (v: EventMap[K]) => void): () => void {
         const all = this.listeners as Record<string, Set<(v: unknown) => void> | undefined>;
-        const set = (all[type] ??= new Set());
+        all[type] ??= new Set();
+        const set = all[type];
         set.add(fn as (v: unknown) => void);
         return () => set.delete(fn as (v: unknown) => void);
     }
@@ -401,7 +402,7 @@ export class TrailFlyover {
     // ---------------------------------------------------------------- internals
 
     private emit<K extends keyof EventMap>(type: K, v: EventMap[K]) {
-        this.listeners[type]?.forEach(fn => (fn as (x: EventMap[K]) => void)(v));
+        for (const fn of this.listeners[type] ?? []) (fn as (x: EventMap[K]) => void)(v);
     }
 
     private setBusy(b: boolean, status = '', exportRes = false) {
@@ -494,7 +495,8 @@ export class TrailFlyover {
         const rough = buildFlightPlan(points, { ...flight, aspect, exaggeration });
         let terrain = null;
         this.loadAbort?.abort();
-        const abort = (this.loadAbort = new AbortController());
+        const abort = new AbortController();
+        this.loadAbort = abort;
         try {
             this.emit('status', 'Načítám výškový model…');
             const lon = rough.track.lon, lat = rough.track.lat;
@@ -878,7 +880,8 @@ export class TrailFlyover {
                     ctx.strokeStyle = color;
                     ctx.lineWidth = width * this.pixelRatio;
                     ctx.beginPath();
-                    pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+                    ctx.moveTo(pts[0].x, pts[0].y);
+                    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
                     ctx.stroke();
                 }
                 ctx.restore();

@@ -138,7 +138,7 @@ export function placeLabelsOnTrack(
 export function thinLabels<T extends PlacedLabel>(labels: T[], minGap = 0.6): T[] {
     if (!(minGap > 0)) return labels;
     const pr = (l: PlacedLabel) => l.priority ?? KIND_PRIORITY[l.kind ?? ''] ?? 2;
-    const order = labels.map((l, i) => i).sort((a, b) => pr(labels[b]) - pr(labels[a]) || labels[a].offTrack - labels[b].offTrack || a - b);
+    const order = labels.map((_, i) => i).sort((a, b) => pr(labels[b]) - pr(labels[a]) || labels[a].offTrack - labels[b].offTrack || a - b);
     const taken: number[] = [];
     const keep = new Set<number>();
     for (const i of order) {
@@ -324,6 +324,27 @@ export function formatDuration(sec: number) {
     return h > 0 ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`;
 }
 
+/**
+ * Splits text into lines no wider than `maxWidth` (current ctx.font), breaking at spaces.
+ * A single word longer than the line stays whole on its own line.
+ */
+export function wrapText(ctx: Pick<CanvasRenderingContext2D, 'measureText'>, text: string, maxWidth: number): string[] {
+    const words = text.split(/ +/).filter(Boolean);
+    const lines: string[] = [];
+    let line = '';
+    for (const w of words) {
+        const next = line ? `${line} ${w}` : w;
+        if (line && ctx.measureText(next).width > maxWidth) {
+            lines.push(line);
+            line = w;
+        } else {
+            line = next;
+        }
+    }
+    if (line) lines.push(line);
+    return lines;
+}
+
 /** Title that always fits: first a smaller font (down to 70 %), then an ellipsis. */
 function drawFitted(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, weight: number, size: number) {
     let px = size;
@@ -400,11 +421,14 @@ export function drawDefaultHud(ctx: CanvasRenderingContext2D, f: HudFrame) {
     roundRect(ctx, m, barY, Math.max(4 * s, (W - 2 * m) * f.progress), 4 * s, 2 * s);
     ctx.fill();
 
-    // Attribution (required by tile providers)
+    // Attribution (required by tile providers): always complete — wrapped, never cut off.
     ctx.font = `400 ${Math.round(14 * s)}px ${FONT}`;
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.fillText(f.attribution, W - 12 * s, H - 8 * s);
+    const lines = wrapText(ctx, f.attribution, W - 24 * s);
+    lines.forEach((line, i) => {
+        ctx.fillText(line, W - 12 * s, H - 8 * s - (lines.length - 1 - i) * 17 * s);
+    });
     ctx.restore();
 }

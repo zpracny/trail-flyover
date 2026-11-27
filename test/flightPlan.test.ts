@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFlightPlan, zoomPanPath, CAMERA_PRESETS, type FlightPlan, type PresetId } from '../src/core/flightPlan.ts';
+import { buildFlightPlan, zoomPanPath, CAMERA_PRESETS, type PresetId } from '../src/core/flightPlan.ts';
 import { angleDiff, type TrackPoint } from '../src/core/geo.ts';
 import { FPS, frames, yawStats, assertSmooth, projector } from './helpers/camera.ts';
 import { SOCA_VALLEY, TOLMIN_KOPER } from './helpers/tracks.ts';
@@ -90,7 +90,7 @@ test('camera stays above a steep synthetic ridge between camera and trail', () =
     // Flat track at 500 m, ridge of 2000 m running parallel 1–2 km to the side.
     const pts: TrackPoint[] = [];
     for (let i = 0; i <= 200; i++) pts.push({ lon: 14 + i * 0.0006, lat: 49, ele: 500 });
-    const ridge = (lon: number, lat: number) => (lat < 48.99 && lat > 48.975 ? 2000 : 500);
+    const ridge = (_lon: number, lat: number) => (lat < 48.99 && lat > 48.975 ? 2000 : 500);
     const plan = buildFlightPlan(pts, { duration: 15, terrain: ridge, exaggeration: 1.5, preset: 'low' });
     for (const p of frames(plan)) {
         const g = ridge(p.camera.lon, p.camera.lat) * 1.5;
@@ -101,7 +101,10 @@ test('camera stays above a steep synthetic ridge between camera and trail', () =
 test('GPS jitter during a long stop does not spin the camera', () => {
     const pts: TrackPoint[] = [];
     let seed = 1;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5);
+    const rnd = () => {
+        seed = (seed * 16807) % 2147483647;
+        return seed / 2147483647 - 0.5;
+    };
     for (let i = 0; i < 300; i++) pts.push({ lon: 14 + i * 0.0001, lat: 49 });
     for (let i = 0; i < 400; i++) pts.push({ lon: 14.03 + rnd() * 0.0003, lat: 49 + rnd() * 0.0003 });
     for (let i = 0; i < 300; i++) pts.push({ lon: 14.03 + i * 0.0001, lat: 49 + i * 0.00005 });
