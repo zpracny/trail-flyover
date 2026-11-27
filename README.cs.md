@@ -130,6 +130,7 @@ await fly.load(parseGpx(gpxText).points, { title: 'Tolmin – Koper', subtitle: 
 fly.play();                                      // náhled v reálném čase
 await fly.prefetch(p => console.log(p));         // volitelně: dlaždice předem, pak přehrávání bez děr
 const video = await fly.exportVideo({ format: 'mp4', fps: 30, onProgress });
+console.log(video.stats); // kam šel čas: { tiles, render, overlay, encode, … } v ms
 const photo = await fly.exportImage();
 fly.on('time', t => …); fly.on('state', s => …);
 fly.destroy();
@@ -291,7 +292,13 @@ Statická kamera (`camera: 'static'`):
 ## Názvy míst
 
 Předané štítky (`labels`) se neukazují všechny. Zůstanou jen místa, kterými trasa opravdu vede,
-a každé se objeví ve chvíli, kdy k němu čelo trasy dojede (ne dřív).
+a každé se objeví, když se k němu čelo trasy blíží.
+
+- **Čas na přečtení** (`labelLead`, výchozí 1,2 s): název se objeví o tolik dřív, než tam trasa
+  dojede. Kamera, která trasu sleduje, nechá projeté místo za sebou za zlomek sekundy (zmizí
+  spodem obrazu), takže název se čte, dokud je místo ještě před ní. Na trase Tolmin–Koper
+  (20s video, vysoký spodní panel) je teď každý název čitelný aspoň 1,2 s (medián 1,6 s),
+  dřív medián 0,4 s. `0` = objeví se přesně ve chvíli příjezdu.
 
 - **Dosah podle druhu místa** (`labelReach`, výchozí `LABEL_REACH`): město do 1 000 m (bod města
   je jeho střed a trasa ho může míjet po okraji), vesnice 400 m, samota 250 m, vrchol 250 m,

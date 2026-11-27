@@ -215,6 +215,20 @@ test('labels: appear at the moment the trail gets there (not before), fully visi
     assert.deepEqual(drawn([label('A', 14, 49, 100), label('B', 14.01, 49, 9000)], frame(), 5000), { A: 1 });
 });
 
+test('labels: lead shows a name before the trail arrives, so a fast flight leaves time to read it', () => {
+    const l: PlacedLabel = { ...label('Ves', 14, 49, 5000), t: 8 };
+    const alphaAt = (t: number, lead?: number) => drawn([l], frame({ t }), 0, { lead }).Ves;
+    assert.equal(alphaAt(7.5), undefined, 'no lead: nothing before arrival');
+    assert.equal(alphaAt(6.7, 1.2), undefined, 'not earlier than the lead');
+    const early = alphaAt(6.95, 1.2);
+    assert.ok(early > 0.05 && early < 0.6, `fading in 1.2 s ahead: ${early}`);
+    assert.equal(alphaAt(7.4, 1.2), 1, 'fully readable before the tip gets there');
+    assert.equal(alphaAt(9, 1.2), 1);
+    // The place the track starts in is unaffected; a negative lead counts as none.
+    assert.equal(drawn([{ ...label('Start', 14, 49, 0), t: 0 }], frame({ t: 0 }), 0, { lead: 1.2 }).Start, 1);
+    assert.equal(alphaAt(7.5, -3), undefined);
+});
+
 test('labels with a static camera: small places fade out again, towns and the start stay', () => {
     const ls: PlacedLabel[] = [
         { ...label('Ves', 14, 49, 5000), t: 2 },

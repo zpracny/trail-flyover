@@ -73,6 +73,13 @@ export interface TrailFlyoverOptions {
      * each end of the track. Default true.
      */
     keepEndpointLabels?: boolean;
+    /**
+     * Seconds before the trail reaches a place that its name starts to appear (following camera).
+     * The camera leaves a passed place behind within a fraction of a second, so a name is read
+     * while the place is still ahead. Default 1.2: at least about 1.2 s to read every name, also
+     * with a tall bottom panel; 0 = appear exactly as the trail arrives.
+     */
+    labelLead?: number;
     endpointRadius?: number;
     colors?: { trail?: string; casing?: string; ghost?: string; accent?: string };
     /** Show the remaining route faintly ahead of the tip. Default true. */
@@ -117,6 +124,32 @@ export interface ExportOptions {
     signal?: AbortSignal;
     bitrate?: number;
 }
+
+/**
+ * Where the time of an export went (all in ms, summed over frames). Useful to tell a slow
+ * network from a slow encoder: `tiles` large → waiting for tiles; `encode` large → the video
+ * encoder is the limit (e.g. no hardware encoding).
+ */
+export interface ExportStats {
+    frames: number;
+    /** Wall-clock time of the whole export. */
+    total: number;
+    /** Waiting for map tiles (network and tile decoding in MapLibre's workers). */
+    tiles: number;
+    /** Rendering the map (synchronous redraws). */
+    render: number;
+    /** Drawing the overlay and copying the picture into the video frame. */
+    overlay: number;
+    /** Waiting for the video encoder (backpressure) and finishing the file. */
+    encode: number;
+    /** Map tiles that arrived during the export. */
+    tilesLoaded: number;
+    /** Frames that gave up waiting for tiles (drawn with whatever had arrived). */
+    timeouts: number;
+}
+
+/** Accumulates the time of one export (see ExportStats). */
+interface SettleStats { tiles: number; render: number; }
 
 type EventMap = {
     time: number;
@@ -355,7 +388,7 @@ export class TrailFlyover {
     }
 
     /** Renders the fly-over frame by frame (waiting for all tiles) and encodes MP4/WebM. */
-    async exportVideo(o: ExportOptions = {}): Promise<EncodedVideo> {
+    async exportVideo(o: ExportOptions = {}): Promise<EncodedVideo & { stats: ExportStats }> {
         this.claim();
         let back = this.t;
         try {
@@ -367,33 +400,56 @@ export class TrailFlyover {
             back = this.t;
             this.showStill();
             this.setBusy(true, this.strings().statusVideo, true);
+            const t0 = performance.now();
+            const st = { tiles: 0, render: 0, overlay: 0, tilesLoaded: 0, timeouts: 0 };
+            const map = this.map!;
+            const onData = (e: object) => { if ('tile' in e && e.tile) st.tilesLoaded++; };
+            map.on('data', onData);
             let slowFrames = 0;
-            return await encodeVideo({
-                format: o.format ?? 'mp4',
-                width: this.output.width,
-                height: this.output.height,
-                fps,
-                frameCount: Math.round(plan.duration * fps) + 1,
-                bitrate: o.bitrate,
-                signal: o.signal,
-                onProgress: o.onProgress,
-                drawFrame: async (i, ctx) => {
-                    if (this.destroyed) throw new DOMException('The player was destroyed', 'AbortError');
-                    const t = Math.min(plan.duration, i / fps);
-                    this.t = t;
-                    const pose = this.applyCamera(t);
-                    this.updateSegments(plan.distanceAt(t));
-                    // Budget like a render farm: patient at first, faster if the network is slow.
-                    // settle() ends with a fresh redraw of exactly this camera.
-                    const ok = await this.settle(slowFrames > 3 ? 1500 : 6000);
-                    if (!ok) slowFrames++;
-                    if (this.destroyed) throw new DOMException('The player was destroyed', 'AbortError');
-                    this.drawHud(t, pose);
-                    ctx.drawImage(this.map!.getCanvas(), 0, 0, this.output.width, this.output.height);
-                    ctx.drawImage(this.hudCanvas, 0, 0);
-                    this.emit('time', t);
-                },
-            });
+            try {
+                const video = await encodeVideo({
+                    format: o.format ?? 'mp4',
+                    width: this.output.width,
+                    height: this.output.height,
+                    fps,
+                    frameCount: Math.round(plan.duration * fps) + 1,
+                    bitrate: o.bitrate,
+                    signal: o.signal,
+                    onProgress: o.onProgress,
+                    drawFrame: async (i, ctx) => {
+                        if (this.destroyed) throw new DOMException('The player was destroyed', 'AbortError');
+                        const t = Math.min(plan.duration, i / fps);
+                        this.t = t;
+                        const pose = this.applyCamera(t);
+                        this.updateSegments(plan.distanceAt(t));
+                        // Budget like a render farm: patient at first, faster if the network is slow.
+                        // settle() ends with a fresh redraw of exactly this camera.
+                        const ok = await this.settle(slowFrames > 3 ? 1500 : 6000, st);
+                        if (!ok) { slowFrames++; st.timeouts++; }
+                        if (this.destroyed) throw new DOMException('The player was destroyed', 'AbortError');
+                        const d0 = performance.now();
+                        this.drawHud(t, pose);
+                        ctx.drawImage(map.getCanvas(), 0, 0, this.output.width, this.output.height);
+                        ctx.drawImage(this.hudCanvas, 0, 0);
+                        st.overlay += performance.now() - d0;
+                        this.emit('time', t);
+                    },
+                });
+                const r = (x: number) => Math.round(x);
+                const stats: ExportStats = {
+                    frames: video.frames,
+                    total: r(performance.now() - t0),
+                    tiles: r(st.tiles),
+                    render: r(st.render),
+                    overlay: r(st.overlay),
+                    encode: r(video.encodeWait),
+                    tilesLoaded: st.tilesLoaded,
+                    timeouts: st.timeouts,
+                };
+                return { blob: video.blob, mimeType: video.mimeType, extension: video.extension, codec: video.codec, stats };
+            } finally {
+                map.off('data', onData);
+            }
         } finally {
             this.release(back);
         }
@@ -900,17 +956,23 @@ export class TrailFlyover {
      * `areTilesLoaded()` alone is vacuously true right after a source is swapped (it has not
      * requested any tile yet), so sources must be loaded too, and at least two frames rendered.
      */
-    private async settle(timeoutMs: number): Promise<boolean> {
+    private async settle(timeoutMs: number, stats?: SettleStats): Promise<boolean> {
         const map = this.map!;
         const t0 = performance.now();
         const ready = () => map.loaded() && map.areTilesLoaded();
+        const redraw = () => {
+            const r0 = performance.now();
+            map.redraw();
+            if (stats) stats.render += performance.now() - r0;
+        };
         // redraw() renders synchronously and asks for the tiles the new camera needs; no tile can
         // arrive between it and the check right after it (JS runs one task at a time). So when
         // everything is loaded right after a redraw, that redraw already showed it all: done in
         // one render.
-        map.redraw();
+        redraw();
         if (ready()) return true;
         for (;;) {
+            const w0 = performance.now();
             // Wake on MapLibre's 'data' event (a tile arrived), with a short timer as a fallback.
             // Not on the timer alone: in a background tab browsers run timers at most once a
             // second (after a few minutes once a minute), which stalled exports for many minutes.
@@ -928,6 +990,7 @@ export class TrailFlyover {
                 map.on('data', done);
                 unchainedTimeout(50, done, t => { timer = t; });
             });
+            if (stats) stats.tiles += performance.now() - w0;
             if (this.destroyed) return false;
             const late = performance.now() - t0 > timeoutMs;
             // Redraw only once the tiles are in (or time is up): the redraw may ask for more tiles
@@ -935,7 +998,7 @@ export class TrailFlyover {
             // `loaded()` stays false until the next render after any change, so it would wait for
             // MapLibre's own render loop.
             if (map.areTilesLoaded() || late) {
-                map.redraw();
+                redraw();
                 if (ready()) return true;
                 if (late) return false;
             }
@@ -1019,7 +1082,9 @@ export class TrailFlyover {
         // With a static camera nothing ever leaves the picture: small places fade out again after a
         // while, towns stay as landmarks. A flying camera shows small places only at flight distance,
         // not in the overview shots at both ends.
-        drawLabels(ctx, this.labels, frame, tipS, plan.meta.camera === 'static' ? { maxLabels: 12, hold: 3.5, bands } : { detailRange: plan.meta.range, bands });
+        drawLabels(ctx, this.labels, frame, tipS, plan.meta.camera === 'static'
+            ? { maxLabels: 12, hold: 3.5, bands }
+            : { detailRange: plan.meta.range, bands, lead: this.opts.labelLead ?? 1.2 });
         if (tip) drawTip(ctx, tip, scale, c.accent);
         if (this.opts.hud !== false) (this.opts.hud ?? drawDefaultHud)(ctx, frame);
     }
