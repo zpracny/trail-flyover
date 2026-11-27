@@ -19,7 +19,7 @@ import { loadTerrariumSampler, expandBBox, TERRARIUM_URL } from '../core/terrari
 import type { TrackPoint } from '../core/geo.ts';
 import { resolveBasemap, BASEMAPS, type BasemapDef } from './basemaps.ts';
 import {
-    drawDefaultHud, drawLabels, drawTip, placeLabelsOnTrack, thinLabels,
+    drawDefaultHud, drawLabels, drawTip, placeLabelsOnTrack, thinLabels, markEndpointLabels,
     type HudFrame, type FlyoverLabel, type LabelReach, type PlacedLabel, type ScreenPoint,
 } from '../hud/hud.ts';
 import { encodeVideo, type VideoFormat, type EncodedVideo } from '../export/encode.ts';
@@ -67,6 +67,13 @@ export interface TrailFlyoverOptions {
      * important ones are left out (towns always stay). Default 0.6, 0 = show all.
      */
     labelMinGap?: number;
+    /**
+     * Always show the places the ride starts and ends in — in the overviews too, even when they are
+     * villages or hamlets: the nearest settlement within `endpointRadius` (m, default 3000) of
+     * each end of the track. Default true.
+     */
+    keepEndpointLabels?: boolean;
+    endpointRadius?: number;
     colors?: { trail?: string; casing?: string; ghost?: string; accent?: string };
     /** Show the remaining route faintly ahead of the tip. Default true. */
     ghostTrail?: boolean;
@@ -233,7 +240,8 @@ export class TrailFlyover {
         const needsPlan = patch.flight !== undefined || patch.exaggeration !== undefined || patch.mode !== undefined
             || 'elevationProfile' in patch || 'hud' in patch;
         // `in`, not `!== undefined`: passing undefined resets the option to its default.
-        const needsLabels = 'labels' in patch || 'labelReach' in patch || 'labelMinGap' in patch;
+        const needsLabels = 'labels' in patch || 'labelReach' in patch || 'labelMinGap' in patch
+            || 'keepEndpointLabels' in patch || 'endpointRadius' in patch;
         const gen = needsPlan && this.points.length ? ++this.gen : this.gen;
         await this.enqueue(async () => {
             if (this.destroyed) return;
@@ -795,8 +803,9 @@ export class TrailFlyover {
     private placeLabels() {
         const plan = this.plan;
         if (!plan) return;
-        const placed = placeLabelsOnTrack(this.opts.labels ?? [], plan.track, this.opts.labelReach)
+        let placed = placeLabelsOnTrack(this.opts.labels ?? [], plan.track, this.opts.labelReach)
             .map(l => ({ ...l, t: plan.timeAt(l.s) }));
+        if (this.opts.keepEndpointLabels !== false) placed = markEndpointLabels(placed, plan.track, this.opts.endpointRadius);
         this.labels = thinLabels(placed, this.opts.labelMinGap ?? 0.6);
     }
 
