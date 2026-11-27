@@ -149,6 +149,9 @@ Přehrávač počítá s tím, že ho aplikace volá rychle za sebou (posuvníky
 - Během exportu a přednačítání ukazuje přehrávač stojící obraz z okamžiku spuštění: mapa pod ním
   skáče ze snímku na snímek a čeká na dlaždice, což by vypadalo trhaně. `stillWhileBusy: false`
   ukáže práci naživo.
+- Stránka, která se nevykresluje (karta na pozadí, zakryté nebo minimalizované okno), nedostává
+  snímky animace a bez nich MapLibre nenačte. `load()` pak čeká místo chyby: jeho limit 20 s počítá
+  jen dobu, kdy se stránka vykresluje.
 - `prefetch()` je pro plynulé **přehrávání**. Export ho nepotřebuje: na každou dlaždici každého
   snímku stejně počká.
 - `destroy()` jde zavolat kdykoli, i uprostřed načítání nebo exportu. Rozpracované načítání se
@@ -432,7 +435,9 @@ použít i bez přehrávače, třeba pro animaci trasy v interaktivní mapě NaB
 pro 2D Story v TrailMetrics, který kreslí do canvasu.
 
 Vlastní podklad je obyčejný objekt `BasemapDef` (URL dlaždic, atribuce, úpravy barev). Atribuci
-kreslí HUD i do videa.
+kreslí HUD i do videa. `background` je barva tam, kam dlaždice ještě nedorazila (rychlý průlet
+v náhledu); má být blízko barvě podkladu (u satelitu tmavá), aby mezera vypadala jako opar, ne
+jako světlá skvrna.
 Terén je vždy AWS Terrain Tiles (Terrarium, zdarma).
 
 ## Vstupní data

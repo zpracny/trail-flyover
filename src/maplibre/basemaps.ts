@@ -16,6 +16,12 @@ export interface BasemapDef {
     paint?: Record<string, unknown>;
     /** Default hillshade strength 0–1 (0 = off). Satellite already has real shadows. */
     hillshade: number;
+    /**
+     * Colour shown where a tile has not arrived yet (fast flights, first frames of the preview).
+     * Close to the basemap's average colour, so a gap looks like haze rather than a bright patch.
+     * Default a light grey-blue.
+     */
+    background?: string;
     /** Human-readable coverage note, shown in UIs. */
     coverage?: string;
     /** Basemap drawn underneath, visible where this one has no coverage (e.g. ČÚZK outside Czechia). */
@@ -43,6 +49,7 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         paint: { 'raster-saturation': -0.1, 'raster-contrast': 0.08 },
         sharing: 'personal',
         hillshade: 0,
+        background: '#3c4637',
         coverage: 'worldwide',
     },
     'esri-wayback-2022': {
@@ -55,6 +62,7 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         attribution: '© Esri World Imagery Wayback (2022), Maxar, Earthstar Geographics',
         sharing: 'personal',
         hillshade: 0,
+        background: '#3c4637',
         coverage: 'worldwide; snow only in places (Šumava: Špičák, Železná Ruda)',
     },
     'cuzk-ortofoto': {
@@ -67,6 +75,7 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         paint: { 'raster-saturation': -0.05 },
         sharing: 'open',
         hillshade: 0,
+        background: '#3c4637',
         coverage: 'Czechia (the sharpest detail), Esri beyond the border',
         fallback: 'esri-satellite',
     },
@@ -82,6 +91,7 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         paint: { 'raster-saturation': -1, 'raster-contrast': 0.18, 'raster-brightness-max': 0.92 },
         sharing: 'personal',
         hillshade: 0,
+        background: '#474747',
         coverage: 'worldwide',
     },
     'opentopomap': {
@@ -93,6 +103,7 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         attribution: '© OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA)',
         sharing: 'open',
         hillshade: 0.25,
+        background: '#e4e2d8',
         coverage: 'worldwide; slow server (a tile can take seconds)',
     },
     'esri-topo': {
@@ -104,6 +115,7 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         attribution: 'Sources: Esri, HERE, Garmin, Intermap, increment P Corp., GEBCO, USGS, FAO, NPS, NRCAN, GeoBase, IGN, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), © OpenStreetMap contributors, GIS User Community',
         sharing: 'personal',
         hillshade: 0.15,
+        background: '#e4e2d8',
         coverage: 'worldwide, fast server',
     },
     'esri-light': {
@@ -115,6 +127,7 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         attribution: '© Esri, HERE, Garmin, © OpenStreetMap contributors, GIS User Community',
         sharing: 'personal',
         hillshade: 0.45,
+        background: '#dcdcd8',
         coverage: 'worldwide; black-and-white map without labels, terrain as hillshade',
     },
     'esri-dark': {
@@ -126,6 +139,7 @@ export const BASEMAPS: Record<string, BasemapDef> = {
         attribution: '© Esri, HERE, Garmin, © OpenStreetMap contributors, GIS User Community',
         sharing: 'personal',
         hillshade: 0.55,
+        background: '#262626',
         coverage: 'worldwide',
     },
 };

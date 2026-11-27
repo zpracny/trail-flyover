@@ -104,6 +104,9 @@ The player expects to be called in quick succession (sliders, React effects):
 - While an export or a prefetch runs, the player shows the picture from the moment it started,
   still: the map underneath jumps from frame to frame waiting for tiles, which would look jerky.
   `stillWhileBusy: false` shows the work live.
+- A page that does not render (background tab, covered or minimised window) gets no animation
+  frames, and MapLibre cannot load without them. `load()` then waits instead of failing: its 20 s
+  limit counts only time in which the page renders.
 - `prefetch()` is meant for smooth **playback**. An export does not need it: it waits for every
   tile of every frame anyway.
 - `destroy()` may be called at any time, even in the middle of loading or exporting. A load in
@@ -338,7 +341,9 @@ should pass them directly as `labels`.
 
 No built-in basemap needs an API key. A keyed basemap of your own can be added through
 `BasemapDef.requiresKey` and `apiKeys`. A custom basemap is a plain `BasemapDef` object (tile URLs,
-attribution, colour adjustments). The HUD draws the attribution into the video too. Terrain always
+attribution, colour adjustments). The HUD draws the attribution into the video too. `background`
+is the colour shown where a tile has not arrived yet (fast preview flights); pick one close to the
+imagery (dark for satellite), so a gap looks like haze, not a bright patch. Terrain always
 comes from AWS Terrain Tiles (Terrarium, free).
 
 ### Licences and sharing the video (as of November 2026)
