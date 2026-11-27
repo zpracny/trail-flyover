@@ -84,15 +84,24 @@ function renderMeta() {
     const plan = fly?.flightPlan;
     if (!plan) return;
     const m = plan.meta;
-    $('meta').innerHTML = [
+    const rows: Array<[string, string, string?]> = [
         ['Délka trasy', formatDistance(plan.length)],
         ['Video', `${plan.duration.toFixed(1)} s (úvod ${m.intro.toFixed(1)} s, závěr ${m.outro.toFixed(1)} s)`],
         ['Kamera', `${m.camera === 'static' ? 'stojí, ' : ''}${(m.range / 1000).toFixed(1)} km od cíle, náklon ${Math.round(m.pitch)}°`],
         ['Rychlost', `${Math.round(m.followSpeed * 3.6).toLocaleString('cs-CZ')} km/h nad terénem`],
         ['Názvy míst', `${fly!.labelCount} na trase`],
         ['Výstup', `${fly!.output.width}×${fly!.output.height}`],
-        ['Plynulost', `<span id="fps">— (přehraj)</span>`],
-    ].map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
+        ['Plynulost', '— (přehraj)', 'fps'],
+    ];
+    // Built as elements with textContent: nothing here is ever parsed as HTML.
+    $('meta').replaceChildren(...rows.flatMap(([k, v, id]) => {
+        const key = document.createElement('span');
+        key.textContent = k;
+        const value = document.createElement('span');
+        value.textContent = v;
+        if (id) value.id = id;
+        return [key, value];
+    }));
 }
 
 // ---------------------------------------------------------------- frame pacing meter
@@ -121,9 +130,9 @@ function reportPacing() {
 async function createPlayer() {
     abort?.abort();
     fly?.destroy();
-    stage.innerHTML = '';
+    stage.replaceChildren();
     status('Připravuji…', 0);
-    const player = (fly = new TrailFlyover(stage, {
+    const player = new TrailFlyover(stage, {
         maplibregl,
         output: OUTPUTS[state.aspect],
         basemap: state.basemap,
@@ -135,7 +144,8 @@ async function createPlayer() {
         mode: state.mode,
         snow: snowOptions(),
         maxTileCacheSize: Number(new URLSearchParams(location.search).get('cache')) || undefined,
-    }));
+    });
+    fly = player;
     (window as unknown as { __fly: TrailFlyover }).__fly = player;
     player.on('time', t => {
         const d = player.duration;
@@ -371,12 +381,28 @@ addEventListener('keydown', e => {
 });
 
 // Default track (?gpx=… or the sample selector)
+/**
+ * Only files from this demo's own server: `?gpx=` must not make the page fetch from elsewhere
+ * (a link could otherwise load someone else's file and its place names into the demo).
+ */
+function sameOriginPath(value: string | null): string | null {
+    if (!value) return null;
+    try {
+        const u = new URL(value, location.href);
+        return u.origin === location.origin && /\.gpx$/i.test(u.pathname) ? u.pathname.replace(/^\//, '') : null;
+    } catch {
+        return null;
+    }
+}
+
 function loadSample(url: string) {
     return fetch(url)
         .then(r => (r.ok ? r.text() : Promise.reject(new Error(`${url}: HTTP ${r.status}`))))
         .then(t => { state.gpxUrl = url; return loadGpxText(t, 'Trasa'); })
         .catch(err => status(`Chyba: ${err.message}`));
 }
-const gpxParam = new URLSearchParams(location.search).get('gpx') ?? 'tolmin.gpx';
+const requested = new URLSearchParams(location.search).get('gpx');
+const gpxParam = sameOriginPath(requested) ?? 'tolmin.gpx';
+if (requested && !sameOriginPath(requested)) status('Parametr ?gpx= přijímá jen soubory .gpx z tohoto serveru.');
 ($('sample') as HTMLSelectElement).value = gpxParam;
 void loadSample(gpxParam);
