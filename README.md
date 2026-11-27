@@ -7,7 +7,12 @@
 A smooth 3D fly-over of a GPS track: real-time preview in the browser and MP4/WebM video export
 for social media. A framework-independent component built on MapLibre GL.
 
-![3D fly-over and the static 2D view of the whole route](docs/preview.jpg)
+**[▶ Try the live demo](https://zpracny.github.io/trail-flyover/)** with the sample ride or your own GPX file.
+
+![A fly-over of a 121 km ride: the camera dives from an overview of the whole route to follow the trail](docs/preview.webp)
+
+The first seconds of a video exported by the demo
+([whole video, 24 s, MP4](https://github.com/zpracny/trail-flyover/releases/download/v0.2.2/trail-flyover-example.mp4)).
 
 - **Smooth by construction.** The camera is a pure function of time, computed up front from a
   resampled and smoothed track. No keyframes, no per-frame waiting for the map.
@@ -215,6 +220,8 @@ mode is not a problem.
 ## Three sharing modes (and a fourth)
 
 They differ in just two options.
+
+![3D fly-over and the static 2D view of the whole route](docs/preview.jpg)
 
 | Mode | What it does | Options |
 |---|---|---|
@@ -451,6 +458,13 @@ A 51 km track:
   pass on long tracks.
 - Very long tracks would benefit from variable speed: slower in the mountains and near the
   finish, faster on the flat.
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) says how to
+get started and what a good change looks like. Issues marked
+[good first issue](https://github.com/zpracny/trail-flyover/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+are a good place to begin.
 
 ## Security
 

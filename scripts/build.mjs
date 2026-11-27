@@ -8,11 +8,14 @@ for (const f of ['maplibre-gl-worker.mjs', 'maplibre-gl.css']) copyFileSync(`nod
 copyFileSync('test/fixtures/tolmin-koper.gpx', 'demo/tolmin.gpx');
 copyFileSync('test/fixtures/tolmin-koper.places.json', 'demo/tolmin.places.json');
 
+// --release: what GitHub Pages serves — minified, without the 7 MB source map.
+const release = process.argv.includes('--release');
 const options = {
   entryPoints: ['demo/main.ts'],
   bundle: true,
   format: 'esm',
-  sourcemap: true,
+  sourcemap: !release,
+  minify: release,
   target: 'es2022',
   outfile: 'demo/dist/main.js',
   logLevel: 'info',

@@ -7,7 +7,12 @@
 Plynulý 3D průlet nad GPS trasou: náhled v prohlížeči a export videa MP4/WebM pro sociální sítě.
 Komponenta nezávislá na frameworku, postavená na MapLibre GL. Je určená k použití v TrailMetrics i NaBrdy.
 
-![Průlet 3D a statický 2D pohled na celou trasu](docs/preview.jpg)
+**[▶ Vyzkoušej živé demo](https://zpracny.github.io/trail-flyover/)** s ukázkovou trasou nebo vlastním GPX.
+
+![Průlet nad 121km trasou: kamera se z přehledu celé trasy snese a letí za linkou](docs/preview.webp)
+
+Prvních pár sekund videa vyexportovaného z dema
+([celé video, 24 s, MP4](https://github.com/zpracny/trail-flyover/releases/download/v0.2.2/trail-flyover-example.mp4)).
 
 ## Požadavky
 
@@ -259,6 +264,8 @@ režimu Reactu nevadí.
 
 Odpovídají režimům sdílení trasy v TrailMetrics; liší se jen dvěma volbami.
 
+![Průlet 3D a statický 2D pohled na celou trasu](docs/preview.jpg)
+
 | Režim | Co dělá | Nastavení |
 |---|---|---|
 | **Celá trasa** | mapa stojí, je vidět celá trasa a běží jen linka | `mode: '2d', flight: { camera: 'static' }` |
@@ -424,6 +431,13 @@ Trasa 51 km:
 - U velmi dlouhých tras by pomohla proměnná rychlost: zpomalit v horách a u cíle, zrychlit na rovině.
 - Převod do TrailMetrics: nahradit `story3DCamera.ts` voláním `buildFlightPlan` a `Story3DEngine`
   přehrávačem s vlastním HUD.
+
+## Jak přispět
+
+Hlášení chyb, nápady i pull requesty jsou vítané; [CONTRIBUTING.md](CONTRIBUTING.md) (anglicky)
+popisuje, jak začít. Úkoly označené
+[good first issue](https://github.com/zpracny/trail-flyover/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+jsou vhodné na začátek.
 
 ## Bezpečnost
 
