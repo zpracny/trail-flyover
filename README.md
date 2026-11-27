@@ -259,6 +259,8 @@ each one appears as the tip of the trail approaches it.
   out of the bottom of the picture), so a name is read while the place is still ahead. Measured on
   the Tolmin–Koper track, 20 s video with a tall bottom panel: every name readable for at least
   1.2 s (median 1.6 s), before only 0.4 s (median). `0` = appear exactly as the trail arrives.
+- **Size** (`labelSize`, default 1): names are 32 px bold at 1080 px output width. A 1080 px wide
+  video on a phone screen is shown about 2.8× smaller, which brings that down to ~11 pt.
 
 - **Reach by kind of place** (`labelReach`, default `LABEL_REACH`): a town within 1,000 m (the
   point of a town is its centre and the track may pass along its edge), a village 400 m, a hamlet

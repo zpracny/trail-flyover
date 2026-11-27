@@ -302,6 +302,8 @@ a každé se objeví, když se k němu čelo trasy blíží.
   spodem obrazu), takže název se čte, dokud je místo ještě před ní. Na trase Tolmin–Koper
   (20s video, vysoký spodní panel) je teď každý název čitelný aspoň 1,2 s (medián 1,6 s),
   dřív medián 0,4 s. `0` = objeví se přesně ve chvíli příjezdu.
+- **Velikost** (`labelSize`, výchozí 1): názvy mají 32 px tučně při šířce videa 1080 px. Video
+  široké 1080 px se na telefonu zobrazí asi 2,8× menší, tedy zhruba 11 pt.
 
 - **Dosah podle druhu místa** (`labelReach`, výchozí `LABEL_REACH`): město do 1 000 m (bod města
   je jeho střed a trasa ho může míjet po okraji), vesnice 400 m, samota 250 m, vrchol 250 m,
