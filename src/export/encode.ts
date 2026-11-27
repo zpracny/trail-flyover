@@ -33,6 +33,13 @@ export interface EncodedVideo {
     codec: VideoCodec;
 }
 
+/** What `encodeVideo` returns: the video plus how long it waited for the encoder. */
+export interface EncodeResult extends EncodedVideo {
+    frames: number;
+    /** ms spent waiting for the encoder (backpressure) and finishing the file. */
+    encodeWait: number;
+}
+
 /** Codec preference: H.264 in MP4 is what every social network accepts. */
 const CODECS: Record<VideoFormat, VideoCodec[]> = {
     mp4: ['avc', 'hevc', 'av1', 'vp9'],
@@ -44,7 +51,7 @@ export async function canEncode(format: VideoFormat, width: number, height: numb
     return getFirstEncodableVideoCodec(CODECS[format], { width, height });
 }
 
-export async function encodeVideo(o: EncodeOptions): Promise<EncodedVideo> {
+export async function encodeVideo(o: EncodeOptions): Promise<EncodeResult> {
     const codec = await canEncode(o.format, o.width, o.height);
     if (!codec) throw new Error(`This browser cannot encode ${o.format.toUpperCase()} ${o.width}×${o.height} (WebCodecs).`);
 
@@ -59,6 +66,7 @@ export async function encodeVideo(o: EncodeOptions): Promise<EncodedVideo> {
     output.addVideoTrack(source, { frameRate: o.fps });
     await output.start();
 
+    let encodeWait = 0;
     try {
         // add() captures the canvas at once and encodes in the background, so the next frame is
         // drawn while the previous one is being encoded. Waiting for the previous add() before
@@ -67,14 +75,18 @@ export async function encodeVideo(o: EncodeOptions): Promise<EncodedVideo> {
         for (let i = 0; i < o.frameCount; i++) {
             if (o.signal?.aborted) throw new DOMException('Export cancelled', 'AbortError');
             await o.drawFrame(i, ctx);
+            const w0 = performance.now();
             await pending;
+            encodeWait += performance.now() - w0;
             const added = source.add(i / o.fps, 1 / o.fps);
             added.catch(() => {}); // surfaced by the await above or below, never unhandled
             pending = added;
             o.onProgress?.((i + 1) / o.frameCount);
         }
+        const w0 = performance.now();
         await pending;
         await output.finalize();
+        encodeWait += performance.now() - w0;
     } catch (err) {
         if (output.state !== 'finalized' && output.state !== 'canceled') await output.cancel().catch(() => {});
         throw err;
@@ -86,5 +98,7 @@ export async function encodeVideo(o: EncodeOptions): Promise<EncodedVideo> {
         mimeType,
         extension: o.format,
         codec,
+        frames: o.frameCount,
+        encodeWait,
     };
 }

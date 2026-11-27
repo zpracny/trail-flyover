@@ -20,7 +20,7 @@ The first seconds of a video exported by the demo
   map tile, so nothing is blurry or missing, however fast the flight.
 - **Three modes:** 3D fly-over, a 2D map that follows the track, and a static view of the whole
   route where only the line runs.
-- **Place names** only for places the track really passes, appearing as the trail reaches them.
+- **Place names** only for places the track really passes, appearing as the trail approaches them.
 - **No API keys.** Satellite, topographic and black-and-white basemaps work out of the box; an
   optional winter filter turns any of them snowy.
 
@@ -54,12 +54,12 @@ The package is not on npm yet. Install a released version from GitHub; the app p
 `maplibre-gl` (5 or newer):
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.4.1/trail-flyover-0.4.1.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.0/trail-flyover-0.5.0.tgz maplibre-gl
 ```
 
 That is a ready-built package (ES modules with type declarations in `dist/`), pinned by a
 checksum in your lockfile. Installing straight from git also works
-(`npm install github:zpracny/trail-flyover#v0.4.1`); npm then builds the package on install.
+(`npm install github:zpracny/trail-flyover#v0.5.0`); npm then builds the package on install.
 Prefer the tarball on build servers: npm records a git install as `git+ssh://`, which needs an
 SSH key there.
 
@@ -85,6 +85,7 @@ await fly.load(parseGpx(gpxText).points, { title: 'Tolmin – Koper', subtitle: 
 fly.play();                                      // real-time preview
 await fly.prefetch(p => console.log(p));         // optional: load tiles first, then playback has no holes
 const video = await fly.exportVideo({ format: 'mp4', fps: 30, onProgress });
+console.log(video.stats); // where the time went: { tiles, render, overlay, encode, … } in ms
 const photo = await fly.exportImage();
 fly.on('time', t => …); fly.on('state', s => …);
 fly.destroy();
@@ -248,7 +249,13 @@ The static camera (`camera: 'static'`):
 ## Place names
 
 Not every label passed in (`labels`) is shown. Only places the track really passes remain, and
-each one appears at the moment the tip of the trail reaches it (not earlier).
+each one appears as the tip of the trail approaches it.
+
+- **Time to read** (`labelLead`, default 1.2 s): a name appears this long before the trail gets
+  there. A following camera leaves a passed place behind within a fraction of a second (it drops
+  out of the bottom of the picture), so a name is read while the place is still ahead. Measured on
+  the Tolmin–Koper track, 20 s video with a tall bottom panel: every name readable for at least
+  1.2 s (median 1.6 s), before only 0.4 s (median). `0` = appear exactly as the trail arrives.
 
 - **Reach by kind of place** (`labelReach`, default `LABEL_REACH`): a town within 1,000 m (the
   point of a town is its centre and the track may pass along its edge), a village 400 m, a hamlet

@@ -280,6 +280,13 @@ export interface LabelDrawOptions {
      * points, and the start and finish remain — a village name means little on a map of the whole route.
      */
     detailRange?: number;
+    /**
+     * Seconds before the trail tip arrives that a name starts to appear. A following camera
+     * leaves a passed place behind within a fraction of a second (it drops out of the bottom of
+     * the picture), so the time to read a name is mostly while the place is still ahead, in the
+     * middle of the picture. Default 0.
+     */
+    lead?: number;
 }
 
 /**
@@ -302,8 +309,10 @@ export function drawLabels(
     for (const l of labels) {
         // Seconds since the trail tip got there (without a time: just "passed or not").
         const age = l.t !== undefined ? f.t - l.t : distanceAlong >= l.s ? Infinity : -Infinity;
-        // A quick fade-in that starts as the tip arrives; the starting place is there from frame one.
-        const reveal = l.t !== undefined && l.t <= 0 ? 1 : smoothstep((age + 0.1) / 0.45);
+        // A quick fade-in that starts as the tip arrives (or `lead` seconds earlier); the starting
+        // place is there from frame one.
+        const lead = l.t !== undefined ? Math.max(0, o.lead ?? 0) : 0;
+        const reveal = l.t !== undefined && l.t <= 0 ? 1 : smoothstep((age + lead + 0.1) / 0.45);
         if (reveal <= 0.01) continue;
         const own = l.priority ?? KIND_PRIORITY[l.kind ?? ''] ?? 2;
         // Start and finish rank with the landmarks, whatever their kind.

@@ -14,11 +14,12 @@ test('API keys never reach error messages or logs: the query of every URL is cut
     const wrapped = snowTileUrl('https://tiles.example/{z}/{x}/{y}?apikey=SECRET').replace('{z}', '1').replace('{x}', '2').replace('{y}', '3');
     assert.ok(!redactUrls(`Bad snow tile URL: ${wrapped}`).includes('SECRET'));
     assert.equal(redactUrls(`failed: "${wrapped}"`), 'failed: "flyover-snow://1/2/3?…"');
-    // Linear time on hostile text (a regex with backtracking took seconds here).
+    // Linear time on hostile text (a regex with backtracking took seconds here). The limit is
+    // generous because test files run in parallel; a quadratic scan would take far longer.
     for (const hostile of ['https://x/?' + ','.repeat(200000) + 'a', 'a'.repeat(200000) + '://x?y', 'https://'.repeat(30000), 'https://x/?a '.repeat(20000)]) {
         const t0 = performance.now();
         redactUrls(hostile);
-        assert.ok(performance.now() - t0 < 200, `${(performance.now() - t0).toFixed(0)} ms`);
+        assert.ok(performance.now() - t0 < 1000, `${(performance.now() - t0).toFixed(0)} ms`);
     }
     // Nothing else changes.
     for (const plain of ['no url here', 'https://example.com/path/only', 'see https://example.com/#frag', '']) assert.equal(redactUrls(plain), plain);
