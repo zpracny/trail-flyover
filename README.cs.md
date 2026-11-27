@@ -100,7 +100,7 @@ src/maplibre/
 src/hud/hud.ts   štítky míst, čelo trasy, výchozí panel se statistikami
 src/effects/     zimní filtr (přebarvení dlaždic)
 src/export/      kódování snímek po snímku přes WebCodecs (mediabunny)
-src/extras/      názvy míst z OpenStreetMap (Overpass), volitelné
+src/extras/      názvy míst z OpenStreetMap (vektorové dlaždice nebo Overpass), volitelné
 ```
 
 **Kamera je čistá funkce času.** Plán letu se spočítá jednou, pak `poseAt(t)` vrací polohu kamery
@@ -305,6 +305,45 @@ a každé se objeví ve chvíli, kdy k němu čelo trasy dojede (ne dřív).
 Na trase Tolmin–Koper (253 míst z OpenStreetMap v okolí) zůstane v dosahu 68 míst;
 při 60s průletu se jich ukáže 31, při 24s statickém záběru 19.
 
+### Názvy míst z OpenStreetMap
+
+`fetchPlaceLabels(points)` čte názvy měst, obcí, osad a vrcholů z **vektorových dlaždic** ve
+schématu OpenMapTiles (vrstvy `place` a `mountain_peak`), výchozí zdroj je
+[OpenFreeMap](https://openfreemap.org): zdarma, bez klíče, z CDN, při jakémkoli podkladu (dlaždice
+se stahují jen kvůli názvům). Funguje v prohlížeči i v Node ≥ 22.
+
+```ts
+import { fetchPlaceLabels, PlaceLabelsError } from 'trail-flyover';
+
+let places;
+try {
+    places = await fetchPlaceLabels(points);
+} catch (err) {
+    // Některé dlaždice selhaly i napodruhé; err.labels má, co daly ostatní.
+    if (err instanceof PlaceLabelsError) places = err.labels; else throw err;
+}
+flyover.load(points, { labels: places });
+```
+
+- Stahují se jen dlaždice do `maxOffTrack` (2 km) od trasy, paralelně: 50km jízda je na zoomu 12
+  zhruba 15–30 dlaždic po ~50 kB, hotovo pod sekundu. Dlouhé trasy sníží zoom, aby nepřekročily
+  `maxTiles` (200).
+- `zoom` (12): všechna města, městyse a obce; osady také, jen v nejhustších oblastech dlaždice
+  vynechají ty nejméně důležité. Na trase Tolmin–Koper ukáže zoom 12 ze 68 míst od Overpassu 67
+  (chybí jeden vrchol), zoom 11 jen 41.
+- `language` upřednostní `name:{language}`, jinak místní název (výchozí).
+- `kinds` (city, town, village, hamlet), `peaks` (true), `concurrency` (6), `timeoutMs` (10000),
+  `signal`.
+- `tiles` (šablona `{z}/{x}/{y}`) nebo `tileJson` ukážou na jiný zdroj OpenMapTiles (MapTiler,
+  vlastní server). Z požadavků na dlaždice server pozná, kde přibližně jízda byla.
+- Chyba nikdy nezapadne: dlaždice, která selže dvakrát, vyhodí `PlaceLabelsError` s `labels`
+  (z dlaždic, které se načetly), `failedTiles` a `totalTiles`.
+- K videu patří atribuce `OPENFREEMAP_ATTRIBUTION` („OpenFreeMap © OpenMapTiles Data from
+  OpenStreetMap“). S Content Security Policy povolte `https://tiles.openfreemap.org` v `connect-src`.
+
+`fetchPlaceLabels(points, { source: 'overpass' })` (nebo `fetchOverpassPlaceLabels`) se místo
+toho ptá Overpass API, které bývá přetížené (odpověď za desítky sekund, nebo vůbec).
+
 ## Mapové podklady
 
 | id | Popis | Klíč | Sdílení videa | Otestováno |
@@ -422,10 +461,10 @@ Trasa 51 km:
 
 - Export vyžaduje WebCodecs (Chrome, Edge, Firefox 130+, Safari 16.4+). MP4 s H.264 preferuje, jinak
   použije HEVC, AV1 nebo VP9.
-- Názvy míst: `fetchPlaceLabels` používá Overpass, který bývá přetížený. Aplikace s vlastními POI je
-  mají předávat přímo (`labels`). Každý dotazovaný server dostane ohraničení trasy, tedy přibližně,
-  kde jízda byla. Výchozí servery: overpass-api.de (FOSSGIS, Německo), overpass.kumi.systems
-  (Švýcarsko), overpass.private.coffee (Rakousko); vlastní seznam jde předat v `endpoints`.
+- Názvy míst: vrcholy jsou v dlaždicích proředěné podle významu, nejsou úplné. Aplikace s vlastními
+  POI je mají předávat přímo (`labels`). U Overpassu dostane každý dotazovaný server ohraničení
+  trasy. Výchozí servery: overpass-api.de (FOSSGIS, Německo), overpass.kumi.systems (Švýcarsko),
+  overpass.private.coffee (Rakousko); vlastní seznam jde předat v `endpoints`.
 - Na mobilech bude potřeba menší mezipaměť dlaždic a nejspíš i nižší rozlišení exportu.
 - Zimní filtr běží v hlavním vlákně. Přesun do Web Workeru by zrychlil první průchod u dlouhých tras.
 - U velmi dlouhých tras by pomohla proměnná rychlost: zpomalit v horách a u cíle, zrychlit na rovině.
