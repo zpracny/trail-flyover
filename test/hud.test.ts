@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    placeLabelsOnTrack, thinLabels, drawLabels, drawDefaultHud, drawElevationProfile, drawTip, withAlpha, fitText, wrapText, formatDistance, formatDuration, LABEL_REACH,
+    placeLabelsOnTrack, thinLabels, markEndpointLabels, drawLabels, drawDefaultHud, drawElevationProfile, drawTip, withAlpha, fitText, wrapText, formatDistance, formatDuration, LABEL_REACH,
     type HudFrame, type PlacedLabel, type FlyoverLabel,
 } from '../src/hud/hud.ts';
 import { readFileSync } from 'node:fs';
@@ -244,6 +244,52 @@ test('labels in the overview shots of a flight: only towns, own points and the s
     assert.ok(fading > 0 && fading < 1, `fading as the camera pulls back: ${fading}`);
     assert.deepEqual(at(9000), { 'Město': 1, Start: 1, 'Můj bod': 1 });
     assert.deepEqual(at(150000), { 'Město': 1, Start: 1, 'Můj bod': 1 });
+});
+
+test('labels: start and finish villages are marked by distance to the ends of the track', () => {
+    // West→east 10 km, then back 4 km west: the ride ends 6 km from the start, not at the far end.
+    const out = line(1401, i => [14 + (i <= 1000 ? i : 2000 - i) * 0.0001376, 49]);
+    const placed = [
+        label('Začátek', 14.001, 49.012, 0, 'hamlet'), // 1.3 km from the first point
+        label('Město', 14.04, 49, 4000, 'town'),
+        label('Obrátka', 14.1376, 49, 10000), // the turnaround: far end, not the finish
+        label('Cíl', 14.0826, 49.003, 6000), // 300 m from the last point
+        label('Kopec', 14.0826, 49.0005, 6000, 'peak'), // closer, but not a settlement
+    ];
+    const marked = markEndpointLabels(placed, out);
+    const ends = Object.fromEntries(marked.filter(l => l.endpoint).map(l => [l.name, l.endpoint]));
+    assert.deepEqual(ends, { 'Začátek': 'start', 'Cíl': 'end' });
+    assert.notEqual(marked, placed, 'returns new objects');
+    assert.equal(placed.some(l => l.endpoint), false, 'input untouched');
+
+    // Too far from either end (radius) → nothing marked; a town is a landmark already.
+    assert.equal(markEndpointLabels(placed, out, 200).some(l => l.endpoint), false);
+    assert.equal(markEndpointLabels([label('Město', 14, 49, 0, 'town')], out)[0].endpoint, undefined);
+
+    // A loop: the same village at both ends is one label, marked as the start.
+    const loop = line(629, i => [14 + 0.01 * Math.sin(i / 100), 49 + 0.01 * (1 - Math.cos(i / 100))]);
+    const one = markEndpointLabels([label('Domov', 14.0005, 49, 0), label('Jinde', 14.01, 49.01, 3000)], loop);
+    assert.deepEqual(one.map(l => l.endpoint), ['start', undefined]);
+    assert.deepEqual(markEndpointLabels([], loop), []);
+});
+
+test('labels: start and finish stay in the overviews and are never thinned out', () => {
+    const ls: PlacedLabel[] = [
+        { ...label('Ves', 14, 49, 5000), t: 2 },
+        { ...label('Start', 13.99, 49, 1500, 'hamlet'), t: 1, endpoint: 'start' }, // not at s = 0
+        { ...label('Cíl', 14.01, 49, 9000), t: 2, endpoint: 'end' },
+    ];
+    const overview = drawn(ls, frame({ t: 19, pose: { ...frame().pose, range: 150000 } }), 9000, { detailRange: 3000 });
+    assert.deepEqual(overview, { Start: 1, 'Cíl': 1 });
+    assert.deepEqual(drawn(ls, frame({ t: 19 }), 9000, { hold: 3.5 }), { Start: 1, 'Cíl': 1 }, 'static camera keeps them too');
+    // Three names at the same moment: the finish wins although it is a hamlet and furthest away,
+    // and like a town it takes its moment, so the villages give way.
+    const burst: PlacedLabel[] = [
+        { ...label('A', 14, 49, 100), t: 5, offTrack: 10 },
+        { ...label('B', 14, 49, 100, 'hamlet'), t: 5, offTrack: 300, endpoint: 'end' },
+        { ...label('C', 14, 49, 100), t: 5, offTrack: 50 },
+    ];
+    assert.deepEqual(thinLabels(burst, 0.6).map(l => l.name), ['B']);
 });
 
 test('labels: a neighbour takes over by cross-fading, never by a sudden swap; edges fade too', () => {

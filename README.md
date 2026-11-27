@@ -54,12 +54,12 @@ The package is not on npm yet. Install a released version from GitHub; the app p
 `maplibre-gl` (5 or newer):
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.3.0/trail-flyover-0.3.0.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.4.0/trail-flyover-0.4.0.tgz maplibre-gl
 ```
 
 That is a ready-built package (ES modules with type declarations in `dist/`), pinned by a
 checksum in your lockfile. Installing straight from git also works
-(`npm install github:zpracny/trail-flyover#v0.3.0`); npm then builds the package on install.
+(`npm install github:zpracny/trail-flyover#v0.4.0`); npm then builds the package on install.
 Prefer the tarball on build servers: npm records a git install as `git+ssh://`, which needs an
 SSH key there.
 
@@ -254,7 +254,11 @@ each one appears at the moment the tip of the trail reaches it (not earlier).
 - The place the track starts in is visible from the first frame.
 - Where labels would overlap, the more important one wins, then the one passed earlier. They
   cross-fade instead of swapping abruptly; near the edge of the picture a label fades out.
-- In the overview shots at both ends of a flight only towns remain.
+- In the overview shots at both ends of a flight only towns remain — and the **start and finish**.
+- **Start and finish** (`keepEndpointLabels`, default true): the nearest village, hamlet or town
+  within `endpointRadius` (3000 m) of the first and of the last point of the track stays like a
+  landmark, in the overviews too. Distance to the end point decides: a ride that ends after an
+  out-and-back to another village finishes where its last point is. A loop shows its place once.
 - **Your own markers**: a label can have its own `color` (the dot) and `icon` (a short text or
   emoji before the name), e.g. `{ name: 'Sněžka', kind: 'peak', color: '#f97316', icon: '▲',
   priority: 5 }`. With `priority` 4 or more a label is a landmark: never thinned out and kept in

@@ -63,6 +63,11 @@ export interface PlacedLabel extends FlyoverLabel {
     offTrack: number;
     /** Video time (s) when the trail tip gets there. Without it the label appears as soon as the tip is past `s`. */
     t?: number;
+    /**
+     * The place the ride starts or ends in (see `markEndpointLabels`). Such a label stays like a
+     * landmark: never thinned out, kept in the overviews, whatever its kind.
+     */
+    endpoint?: 'start' | 'end';
 }
 
 const KIND_PRIORITY: Record<string, number> = { city: 5, town: 4, waypoint: 4, peak: 3, village: 3, hamlet: 1, locality: 1 };
@@ -142,6 +147,48 @@ export function placeLabelsOnTrack(
     return out;
 }
 
+/** Kinds that name a settlement — candidates for the start and finish of a ride. */
+const SETTLEMENT_KINDS = new Set(['city', 'town', 'village', 'hamlet', 'locality', 'suburb', 'quarter', 'neighbourhood', 'isolated_dwelling']);
+
+/** Default `radius` of `markEndpointLabels` (m). */
+export const ENDPOINT_RADIUS = 3000;
+
+/**
+ * Marks the settlement the ride starts in and the one it ends in (`endpoint: 'start' | 'end'`):
+ * for each end of the track the nearest placed label of a settlement kind (town, village,
+ * hamlet…) within `radius` metres of that end point. Distance to the end point decides, not the
+ * spot along the track: a ride that finishes after an out-and-back to another village still ends
+ * where its last point is. On a loop (the same place at both ends) the label is marked once, as
+ * the start. Labels with priority ≥ 4 stay anyway and are not marked.
+ */
+export function markEndpointLabels<T extends PlacedLabel>(
+    labels: T[],
+    track: { lon: ArrayLike<number>; lat: ArrayLike<number> },
+    radius = ENDPOINT_RADIUS,
+): T[] {
+    const n = track.lon.length;
+    if (n === 0 || labels.length === 0) return labels;
+    const nearest = (lon: number, lat: number) => {
+        let best = -1, bestD = radius;
+        labels.forEach((l, i) => {
+            if (!SETTLEMENT_KINDS.has(l.kind ?? '')) return;
+            const d = approxDist(lon, lat, l.lon, l.lat);
+            if (d <= bestD) { bestD = d; best = i; }
+        });
+        return best;
+    };
+    const start = nearest(track.lon[0], track.lat[0]);
+    const end = nearest(track.lon[n - 1], track.lat[n - 1]);
+    if (start < 0 && end < 0) return labels;
+    return labels.map((l, i) => {
+        const pr = l.priority ?? KIND_PRIORITY[l.kind ?? ''] ?? 2;
+        if (pr >= 4) return l;
+        if (i === start) return { ...l, endpoint: 'start' as const };
+        if (i === end) return { ...l, endpoint: 'end' as const };
+        return l;
+    });
+}
+
 /**
  * Keeps the pace of appearing names calm: when places come faster than one per `minGap` seconds
  * (a fast flight through a cluster of hamlets), the less important ones are left out — towns
@@ -150,13 +197,13 @@ export function placeLabelsOnTrack(
  */
 export function thinLabels<T extends PlacedLabel>(labels: T[], minGap = 0.6): T[] {
     if (!(minGap > 0)) return labels;
-    const pr = (l: PlacedLabel) => l.priority ?? KIND_PRIORITY[l.kind ?? ''] ?? 2;
+    const pr = (l: PlacedLabel) => (l.endpoint ? 4 : 0) || (l.priority ?? KIND_PRIORITY[l.kind ?? ''] ?? 2);
     const order = labels.map((_, i) => i).sort((a, b) => pr(labels[b]) - pr(labels[a]) || labels[a].offTrack - labels[b].offTrack || a - b);
     const taken: number[] = [];
     const keep = new Set<number>();
     for (const i of order) {
         const t = labels[i].t;
-        // Towns and the user's own points are landmarks: always kept.
+        // Towns, the user's own points, start and finish are landmarks: always kept.
         if (t === undefined || pr(labels[i]) >= 4 || taken.every(u => Math.abs(u - t) >= minGap)) {
             keep.add(i);
             if (t !== undefined) taken.push(t);
@@ -218,7 +265,7 @@ export interface LabelDrawOptions {
     maxLabels?: number;
     /**
      * Seconds a small place stays after it appeared, then it fades out again. Towns, the user's
-     * own waypoints (priority ≥ 4) and the place the track starts in always stay.
+     * own waypoints (priority ≥ 4) and the places the ride starts and ends in always stay.
      * Default: no limit — a flying camera leaves the label behind anyway.
      */
     hold?: number;
@@ -229,8 +276,8 @@ export interface LabelDrawOptions {
     bands?: { top?: number; bottom?: number };
     /**
      * Camera distance (m) of the follow flight. When the camera pulls back well beyond it (the
-     * overview shots at both ends), small places fade out and only towns and the user's own
-     * points remain — a village name means little on a map of the whole route.
+     * overview shots at both ends), small places fade out and only towns, the user's own
+     * points, and the start and finish remain — a village name means little on a map of the whole route.
      */
     detailRange?: number;
 }
@@ -258,7 +305,9 @@ export function drawLabels(
         // A quick fade-in that starts as the tip arrives; the starting place is there from frame one.
         const reveal = l.t !== undefined && l.t <= 0 ? 1 : smoothstep((age + 0.1) / 0.45);
         if (reveal <= 0.01) continue;
-        const pr = l.priority ?? KIND_PRIORITY[l.kind ?? ''] ?? 2;
+        const own = l.priority ?? KIND_PRIORITY[l.kind ?? ''] ?? 2;
+        // Start and finish rank with the landmarks, whatever their kind.
+        const pr = l.endpoint ? Math.max(own, 4) : own;
         const stays = pr >= 4 || l.s <= 0;
         const kept = stays ? 1 : detail * (hold === Infinity || age < hold ? 1 : 1 - smoothstep((age - hold) / 0.8));
         const d = approxDist(f.pose.target.lon, f.pose.target.lat, l.lon, l.lat);

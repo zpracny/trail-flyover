@@ -41,12 +41,12 @@ Balíček zatím není na npm. Instaluje se vydaná verze z GitHubu, `maplibre-g
 dodává aplikace:
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.3.0/trail-flyover-0.3.0.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.4.0/trail-flyover-0.4.0.tgz maplibre-gl
 ```
 
 Je to hotový přeložený balíček (ES moduly s typovými deklaracemi v `dist/`), v lockfile připnutý
 kontrolním součtem. Funguje i instalace přímo z gitu
-(`npm install github:zpracny/trail-flyover#v0.3.0`); npm pak balíček při instalaci sestaví.
+(`npm install github:zpracny/trail-flyover#v0.4.0`); npm pak balíček při instalaci sestaví.
 Na sestavovacích serverech je lepší balíček z vydání: instalaci z gitu npm zapíše jako
 `git+ssh://`, a ta tam potřebuje SSH klíč.
 
@@ -297,7 +297,11 @@ a každé se objeví ve chvíli, kdy k němu čelo trasy dojede (ne dřív).
 - Místo, ve kterém trasa začíná, je vidět od prvního snímku.
 - Kde by se štítky překrývaly, má přednost důležitější a pak dřív projeté místo. Střídají se
   prolnutím, ne skokem; u okraje obrazu štítek plynule mizí.
-- V přehledových záběrech na začátku a na konci průletu zůstávají jen města.
+- V přehledových záběrech na začátku a na konci průletu zůstávají jen města — a **start a cíl**.
+- **Start a cíl** (`keepEndpointLabels`, výchozí true): nejbližší obec, osada nebo město do
+  `endpointRadius` (3000 m) od prvního a od posledního bodu trasy zůstává jako orientační bod,
+  i v přehledech. Rozhoduje vzdálenost od koncového bodu: jízda, která skončí po odbočce tam
+  a zpět do jiné vesnice, končí tam, kde je její poslední bod. Okruh ukáže své místo jednou.
 - **Vlastní značky**: štítek může mít vlastní `color` (tečka) a `icon` (krátký text nebo emoji
   před názvem), např. `{ name: 'Sněžka', kind: 'peak', color: '#f97316', icon: '▲', priority: 5 }`.
   S `priority` 4 a víc je štítek orientační bod: nikdy se nevynechá a zůstává i v přehledech.
