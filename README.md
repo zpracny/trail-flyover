@@ -54,12 +54,12 @@ The package is not on npm yet. Install a released version from GitHub; the app p
 `maplibre-gl` (5 or newer):
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.2.2/trail-flyover-0.2.2.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.3.0/trail-flyover-0.3.0.tgz maplibre-gl
 ```
 
 That is a ready-built package (ES modules with type declarations in `dist/`), pinned by a
 checksum in your lockfile. Installing straight from git also works
-(`npm install github:zpracny/trail-flyover#v0.2.2`); npm then builds the package on install.
+(`npm install github:zpracny/trail-flyover#v0.3.0`); npm then builds the package on install.
 Prefer the tarball on build servers: npm records a git install as `git+ssh://`, which needs an
 SSH key there.
 
@@ -263,11 +263,49 @@ each one appears at the moment the tip of the trail reaches it (not earlier).
 On the Tolmin–Koper track (253 places from OpenStreetMap around it), 68 places are within reach;
 a 60 s fly-over shows 31 of them, the 24 s static view 19.
 
-`fetchPlaceLabels` gets names from OpenStreetMap through the Overpass API. Every server it asks
-receives the bounding box of the track, i.e. roughly where the ride was. The default servers are
-overpass-api.de (FOSSGIS, Germany), overpass.kumi.systems (Switzerland) and overpass.private.coffee
-(Austria); pass your own list in `endpoints`. Overpass is often overloaded, so apps with their own
-points of interest should pass them directly as `labels`.
+### Place names from OpenStreetMap
+
+`fetchPlaceLabels(points)` reads town, village, hamlet and peak names from **vector tiles** in the
+OpenMapTiles schema (layers `place` and `mountain_peak`), by default from
+[OpenFreeMap](https://openfreemap.org): free, no key, served from a CDN, works for any basemap
+(the tiles are only downloaded for the names). It runs in browsers and in Node ≥ 22.
+
+```ts
+import { fetchPlaceLabels, PlaceLabelsError } from 'trail-flyover';
+
+let places;
+try {
+    places = await fetchPlaceLabels(points, { language: 'en' });
+} catch (err) {
+    // Some tiles failed even after a retry; err.labels has what the others gave.
+    if (err instanceof PlaceLabelsError) places = err.labels; else throw err;
+}
+flyover.load(points, { labels: places });
+```
+
+- Only the tiles within `maxOffTrack` (2 km) of the track are downloaded, in parallel: a 50 km
+  ride takes about 15–30 tiles of ~50 kB at zoom 12, in well under a second. Long tracks step down
+  in zoom to stay within `maxTiles` (200).
+- `zoom` (12): every city, town and village; hamlets too except in the densest areas, where the
+  tiles drop the least important ones. On the Tolmin–Koper track zoom 12 shows 67 of the 68 places
+  Overpass gives (one peak missing); zoom 11 only 41.
+- `language` prefers `name:{language}` and falls back to the local name (the default).
+- `kinds` (city, town, village, hamlet), `peaks` (true), `concurrency` (6), `timeoutMs` (10000),
+  `signal`.
+- `tiles` (a `{z}/{x}/{y}` template) or `tileJson` point to another OpenMapTiles source
+  (MapTiler, your own server). The tile requests tell the server roughly where the ride was.
+- A failure is never silent: a tile that fails twice makes the call throw `PlaceLabelsError` with
+  `labels` (from the tiles that loaded), `failedTiles` and `totalTiles`.
+- Show the attribution `OPENFREEMAP_ATTRIBUTION` ("OpenFreeMap © OpenMapTiles Data from
+  OpenStreetMap") with the video. With a Content Security Policy, allow `https://tiles.openfreemap.org`
+  in `connect-src`.
+
+`fetchPlaceLabels(points, { source: 'overpass' })` (or `fetchOverpassPlaceLabels`) asks the
+Overpass API instead. Every server it asks receives the bounding box of the track. The default
+servers are overpass-api.de (FOSSGIS, Germany), overpass.kumi.systems (Switzerland) and
+overpass.private.coffee (Austria); pass your own list in `endpoints`. Overpass is often
+overloaded, answering in tens of seconds or not at all. Apps with their own points of interest
+should pass them directly as `labels`.
 
 ## Basemaps
 
@@ -390,7 +428,7 @@ src/maplibre/
 src/hud/hud.ts   place labels, tip of the trail, default stats panel
 src/effects/     winter filter (recolouring tiles)
 src/export/      frame-by-frame encoding through WebCodecs (mediabunny)
-src/extras/      place names from OpenStreetMap (Overpass), optional
+src/extras/      place names from OpenStreetMap (vector tiles or Overpass), optional
 ```
 
 **The camera is a pure function of time.** The flight plan is computed once; then `poseAt(t)`
@@ -453,6 +491,8 @@ A 51 km track:
 
 - Export needs WebCodecs (Chrome, Edge, Firefox 130+, Safari 16.4+). MP4 with H.264 is preferred,
   otherwise HEVC, AV1 or VP9 is used.
+- Place names: peaks in vector tiles are thinned out by importance, so not every named peak is
+  there. Apps with their own points of interest should pass them as `labels`.
 - Mobile devices will need a smaller tile cache and probably a lower export resolution.
 - The winter filter runs on the main thread. Moving it to a Web Worker would speed up the first
   pass on long tracks.

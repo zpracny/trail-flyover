@@ -25,6 +25,9 @@ export { drawDefaultHud, drawLabels, drawTip, placeLabelsOnTrack, thinLabels, dr
 export type { HudFrame, FlyoverLabel, PlacedLabel, LabelReach, LabelDrawOptions, ProfileStyle, ScreenPoint } from './hud/hud.ts';
 export { encodeVideo, canEncode } from './export/encode.ts';
 export type { VideoFormat, EncodedVideo } from './export/encode.ts';
-export { fetchPlaceLabels } from './extras/places.ts';
+export { fetchPlaceLabels, fetchVectorPlaceLabels, fetchOverpassPlaceLabels, tilesAlongTrack, PlaceLabelsError, OVERPASS_ENDPOINTS, OPENFREEMAP_TILEJSON, OPENFREEMAP_ATTRIBUTION } from './extras/places.ts';
+export type { PlaceLabelOptions, VectorPlaceLabelOptions } from './extras/places.ts';
+export { readMvtPoints } from './extras/mvt.ts';
+export type { MvtPoint, MvtValue } from './extras/mvt.ts';
 export { snowifyPixels, registerSnowProtocol, snowTileUrl } from './effects/snow.ts';
 export type { SnowOptions } from './effects/snow.ts';
