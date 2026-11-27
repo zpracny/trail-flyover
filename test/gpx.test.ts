@@ -118,10 +118,12 @@ test('GPX: hostile input cannot freeze the page — parsing time grows linearly'
         return best;
     };
     for (const [name, make] of Object.entries(inputs)) {
-        const small = ms(make(10000)), big = ms(make(80000));
-        assert.ok(big < 400, `${name}: ${big.toFixed(0)} ms for 80 000 repetitions`);
-        // 8× the input may cost ~8× the time, not 64× (generous margin for timer noise).
-        assert.ok(big < Math.max(25, small * 20), `${name}: ${small.toFixed(1)} → ${big.toFixed(1)} ms`);
+        // Sizes large enough that the smaller run is not just JIT warm-up and timer noise
+        // (a 10 000 vs 80 000 comparison failed on a busy CI runner at 2.9 → 64 ms).
+        const small = ms(make(40000)), big = ms(make(320000));
+        assert.ok(big < 3000, `${name}: ${big.toFixed(0)} ms for 320 000 repetitions`);
+        // 8× the input costs ~8× the time when linear and 64× when quadratic; 32× separates the two.
+        assert.ok(big < Math.max(100, small * 32), `${name}: ${small.toFixed(1)} → ${big.toFixed(1)} ms`);
     }
 });
 
