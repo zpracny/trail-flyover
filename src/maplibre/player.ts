@@ -126,6 +126,18 @@ type EventMap = {
 
 const DEFAULT_COLORS = { trail: '#ff7a1a', casing: '#4a2200', ghost: '#ffffff', accent: '#ff7a1a' };
 
+/**
+ * setTimeout started from a fresh task (a MessageChannel message), not from inside the previous
+ * timer: browsers throttle *chained* timers in background tabs to once a minute after a few
+ * minutes; a plain timer is throttled to about once a second only.
+ */
+function unchainedTimeout(ms: number, cb: () => void, started: (t: ReturnType<typeof setTimeout>) => void) {
+    if (typeof MessageChannel === 'undefined') return started(setTimeout(cb, ms));
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => { ch.port1.close(); started(setTimeout(cb, ms)); };
+    ch.port2.postMessage(null);
+}
+
 export class TrailFlyover {
     readonly output: { width: number; height: number };
     readonly pixelRatio: number;
@@ -891,18 +903,42 @@ export class TrailFlyover {
     private async settle(timeoutMs: number): Promise<boolean> {
         const map = this.map!;
         const t0 = performance.now();
+        const ready = () => map.loaded() && map.areTilesLoaded();
         // redraw() renders synchronously and asks for the tiles the new camera needs; no tile can
         // arrive between it and the check right after it (JS runs one task at a time). So when
         // everything is loaded right after a redraw, that redraw already showed it all: done in
-        // one render. Otherwise wait for the network, then redraw and check again.
+        // one render.
+        map.redraw();
+        if (ready()) return true;
         for (;;) {
+            // Wake on MapLibre's 'data' event (a tile arrived), with a short timer as a fallback.
+            // Not on the timer alone: in a background tab browsers run timers at most once a
+            // second (after a few minutes once a minute), which stalled exports for many minutes.
+            // Events from the tile workers are not throttled.
+            await new Promise<void>(resolve => {
+                let timer: ReturnType<typeof setTimeout> | undefined;
+                let finished = false;
+                const done = () => {
+                    if (finished) return;
+                    finished = true;
+                    clearTimeout(timer);
+                    map.off('data', done);
+                    resolve();
+                };
+                map.on('data', done);
+                unchainedTimeout(50, done, t => { timer = t; });
+            });
             if (this.destroyed) return false;
-            map.redraw();
-            if (map.loaded() && map.areTilesLoaded()) return true;
-            if (performance.now() - t0 > timeoutMs) return false;
-            // Polling beats waiting for 'idle': MapLibre's own redraws follow the display's frame
-            // rate, which made exports slower in measurements.
-            await new Promise(r => setTimeout(r, 30));
+            const late = performance.now() - t0 > timeoutMs;
+            // Redraw only once the tiles are in (or time is up): the redraw may ask for more tiles
+            // (terrain heights change what is visible), then wait again. Not `ready()` here:
+            // `loaded()` stays false until the next render after any change, so it would wait for
+            // MapLibre's own render loop.
+            if (map.areTilesLoaded() || late) {
+                map.redraw();
+                if (ready()) return true;
+                if (late) return false;
+            }
         }
     }
 
