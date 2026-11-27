@@ -36,23 +36,29 @@ git clone https://github.com/zpracny/trail-flyover.git && cd trail-flyover
 npm ci
 npm run build && npm run serve      # demo at http://127.0.0.1:8811
 npm run check                       # types, linter (Biome) and tests
+npm run build:lib                   # the package apps install: dist/ (JavaScript + type declarations)
 npm run compare                     # smoothness compared with a keyframe camera
 ```
 
-Tests: 85 tests in about 10 s, on a real 121 km recording, a 46 km section of it, and synthetic and
+Tests: 87 tests in about 10 s, on a real 121 km recording, a 46 km section of it, and synthetic and
 random tracks. GitHub Actions runs the same checks on every push.
 
 ## Install into an app
 
-The package is not on npm yet. Install it from GitHub; the app provides `maplibre-gl`:
+The package is not on npm yet. Install a released version from GitHub; the app provides
+`maplibre-gl` (5 or newer):
 
 ```
-npm install github:zpracny/trail-flyover maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.1.0/trail-flyover-0.1.0.tgz maplibre-gl
 ```
 
-The package ships TypeScript source (`src/index.ts`), so the app's bundler has to compile it.
-Verified with esbuild (the demo). Vite and Next.js (`transpilePackages: ['trail-flyover']` in
-`next.config`) should work the same way, but I have not tried them yet.
+That is a ready-built package (ES modules with type declarations in `dist/`), pinned by a
+checksum in your lockfile. Installing straight from git also works
+(`npm install github:zpracny/trail-flyover#v0.1.0`); npm then builds the package on install.
+
+Verified: type-checking with TypeScript 5.7 (`moduleResolution: "bundler"`, strict or not),
+bundling with esbuild, importing the core in Node. Not tried yet: a full Next.js or Vite build.
+No `transpilePackages` should be needed, since the package ships compiled JavaScript.
 
 ## Usage
 
@@ -373,7 +379,6 @@ A 51 km track:
   pass on long tracks.
 - Very long tracks would benefit from variable speed: slower in the mountains and near the
   finish, faster on the flat.
-- The package ships TypeScript source; a compiled build with type declarations is planned.
 
 ## Security
 

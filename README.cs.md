@@ -23,23 +23,29 @@ git clone https://github.com/zpracny/trail-flyover.git && cd trail-flyover
 npm ci
 npm run build && npm run serve      # demo na http://127.0.0.1:8811
 npm run check                       # typy, linter (Biome) a testy
+npm run build:lib                   # balíček pro aplikace: dist/ (JavaScript a typové deklarace)
 npm run compare                     # srovnání plynulosti se současnou kamerou TrailMetrics
 ```
 
-Testy: 85 testů za ~10 s na skutečném záznamu 121 km, jeho 46km úseku a na umělých i náhodných
+Testy: 87 testů za ~10 s na skutečném záznamu 121 km, jeho 46km úseku a na umělých i náhodných
 trasách. Stejnou kontrolu spouští GitHub Actions u každého pushe.
 
 ## Instalace do aplikace
 
-Balíček zatím není na npm. Instaluje se z GitHubu, `maplibre-gl` dodává aplikace:
+Balíček zatím není na npm. Instaluje se vydaná verze z GitHubu, `maplibre-gl` (5 a novější)
+dodává aplikace:
 
 ```
-npm install github:zpracny/trail-flyover maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.1.0/trail-flyover-0.1.0.tgz maplibre-gl
 ```
 
-Balíček obsahuje zdrojový TypeScript (`src/index.ts`), takže ho musí přeložit bundler aplikace.
-Ověřeno s esbuild (demo). Vite a Next.js (`transpilePackages: ['trail-flyover']` v `next.config`)
-by měly fungovat stejně, ale zatím jsem je nezkoušel.
+Je to hotový přeložený balíček (ES moduly s typovými deklaracemi v `dist/`), v lockfile připnutý
+kontrolním součtem. Funguje i instalace přímo z gitu
+(`npm install github:zpracny/trail-flyover#v0.1.0`); npm pak balíček při instalaci sestaví.
+
+Ověřeno: typová kontrola v TypeScriptu 5.7 (`moduleResolution: "bundler"`, se `strict` i bez),
+sestavení přes esbuild, import jádra v Node. Zatím nezkoušeno: úplné sestavení v Next.js nebo Vite.
+`transpilePackages` by nemělo být potřeba, balíček obsahuje přeložený JavaScript.
 
 ## Proč je to plynulé
 
@@ -348,7 +354,6 @@ Trasa 51 km:
 - U velmi dlouhých tras by pomohla proměnná rychlost: zpomalit v horách a u cíle, zrychlit na rovině.
 - Převod do TrailMetrics: nahradit `story3DCamera.ts` voláním `buildFlightPlan` a `Story3DEngine`
   přehrávačem s vlastním HUD.
-- Balíček obsahuje zdrojový TypeScript; v plánu je přeložené sestavení s typovými deklaracemi.
 - Rozhraní dema, popisky výchozího panelu a chybové hlášky jsou česky.
 
 ## Bezpečnost
