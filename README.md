@@ -54,7 +54,7 @@ The package is not on npm yet. Install a released version from GitHub; the app p
 `maplibre-gl` (5 or newer):
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.1/trail-flyover-0.5.1.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.2/trail-flyover-0.5.2.tgz maplibre-gl
 ```
 
 That is a ready-built package (ES modules with type declarations in `dist/`), pinned by a

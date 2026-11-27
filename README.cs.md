@@ -41,7 +41,7 @@ Balíček zatím není na npm. Instaluje se vydaná verze z GitHubu, `maplibre-g
 dodává aplikace:
 
 ```
-npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.1/trail-flyover-0.5.1.tgz maplibre-gl
+npm install https://github.com/zpracny/trail-flyover/releases/download/v0.5.2/trail-flyover-0.5.2.tgz maplibre-gl
 ```
 
 Je to hotový přeložený balíček (ES moduly s typovými deklaracemi v `dist/`), v lockfile připnutý
