@@ -95,6 +95,12 @@ export interface TrailFlyoverOptions {
      * Export always renders at full output resolution.
      */
     previewPixelRatio?: number | 'auto';
+    /**
+     * While a video or image is exported, or tiles are prefetched, the map underneath has to jump
+     * from frame to frame (waiting for tiles), which looks jerky. By default the picture from the
+     * moment the job started is shown instead, still, until it finishes. `false` shows the work live.
+     */
+    stillWhileBusy?: boolean;
     /** Max tiles kept per source in MapLibre's cache (prefetch reuses them). ~256 kB GPU memory each. Default 350 + 8 per km, max 1500. */
     maxTileCacheSize?: number;
 }
@@ -131,6 +137,8 @@ export class TrailFlyover {
     private hudCanvas: HTMLCanvasElement;
     private hudCtx: CanvasRenderingContext2D;
     private resizeObs: ResizeObserver;
+    /** Still picture over the map while an export or prefetch runs (see `stillWhileBusy`). */
+    private still: HTMLCanvasElement | null = null;
     private map: MapLibre.Map | null = null;
     private basemap: BasemapDef;
     private plan: FlightPlan | null = null;
@@ -316,6 +324,7 @@ export class TrailFlyover {
             const plan = this.requirePlan();
             this.pause();
             back = this.t;
+            this.showStill();
             this.setBusy(true, this.strings().statusTiles);
             const dt = Math.min(1, Math.max(0.2, (plan.meta.range * 0.45) / plan.meta.followSpeed));
             const times: number[] = [];
@@ -344,6 +353,7 @@ export class TrailFlyover {
             const fps = o.fps ?? 30;
             if (!(fps >= 1 && fps <= 120)) throw new Error(`Invalid frame rate: ${fps} (allowed 1–120)`);
             back = this.t;
+            this.showStill();
             this.setBusy(true, this.strings().statusVideo, true);
             let slowFrames = 0;
             return await encodeVideo({
@@ -386,6 +396,7 @@ export class TrailFlyover {
             const plan = this.requirePlan();
             this.pause();
             at = Math.max(0, Math.min(plan.duration, t ?? this.t));
+            this.showStill();
             this.setBusy(true, this.strings().statusImage, true);
             this.t = at;
             const pose = this.applyCamera(at);
@@ -459,7 +470,36 @@ export class TrailFlyover {
 
     private release(seekTo: number) {
         this.setBusy(false);
-        if (!this.destroyed) this.seek(seekTo);
+        if (this.destroyed) return this.hideStill();
+        this.seek(seekTo);
+        // Keep the still until the map has drawn the frame it returns to, so nothing flashes —
+        // at most half a second, in case nothing needs redrawing.
+        const still = this.still, map = this.map;
+        if (!still || !map) return this.hideStill();
+        const done = () => { if (this.still === still) this.hideStill(); };
+        map.once('render', () => requestAnimationFrame(done));
+        setTimeout(done, 500);
+    }
+
+    /** Covers the map with what it shows right now (map + overlay), for the duration of a job. */
+    private showStill() {
+        if (this.opts.stillWhileBusy === false || !this.map || this.destroyed) return;
+        this.hideStill();
+        const c = document.createElement('canvas');
+        c.width = this.output.width;
+        c.height = this.output.height;
+        Object.assign(c.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
+        const ctx = c.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(this.map.getCanvas(), 0, 0, c.width, c.height);
+        ctx.drawImage(this.hudCanvas, 0, 0);
+        this.stage.append(c);
+        this.still = c;
+    }
+
+    private hideStill() {
+        this.still?.remove();
+        this.still = null;
     }
 
     private fitStage() {
@@ -851,16 +891,18 @@ export class TrailFlyover {
     private async settle(timeoutMs: number): Promise<boolean> {
         const map = this.map!;
         const t0 = performance.now();
-        map.redraw();
-        for (let frames = 0; ; frames++) {
-            if (this.destroyed) return false;
-            const ready = map.loaded() && map.areTilesLoaded();
-            if (ready && frames >= 2) return true;
-            if (performance.now() - t0 > timeoutMs) return false;
-            // Nothing pending → only yield to let queued tile results in; otherwise wait for the network.
-            await new Promise(r => setTimeout(r, ready ? 0 : 30));
+        // redraw() renders synchronously and asks for the tiles the new camera needs; no tile can
+        // arrive between it and the check right after it (JS runs one task at a time). So when
+        // everything is loaded right after a redraw, that redraw already showed it all: done in
+        // one render. Otherwise wait for the network, then redraw and check again.
+        for (;;) {
             if (this.destroyed) return false;
             map.redraw();
+            if (map.loaded() && map.areTilesLoaded()) return true;
+            if (performance.now() - t0 > timeoutMs) return false;
+            // Polling beats waiting for 'idle': MapLibre's own redraws follow the display's frame
+            // rate, which made exports slower in measurements.
+            await new Promise(r => setTimeout(r, 30));
         }
     }
 

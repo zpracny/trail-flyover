@@ -100,6 +100,11 @@ The player expects to be called in quick succession (sliders, React effects):
   missing key) fails and changes nothing.
 - During an export or a prefetch, `load()`, `update()` and another export fail with an error
   ("An export or prefetch is in progress…"). `seek()` and `play()` are ignored in that time.
+- While an export or a prefetch runs, the player shows the picture from the moment it started,
+  still: the map underneath jumps from frame to frame waiting for tiles, which would look jerky.
+  `stillWhileBusy: false` shows the work live.
+- `prefetch()` is meant for smooth **playback**. An export does not need it: it waits for every
+  tile of every frame anyway.
 - `destroy()` may be called at any time, even in the middle of loading or exporting. A load in
   progress is dropped and no extra map is left behind; an export ends with `AbortError`.
 - An unreachable or missing tile does not make `load()` fail. The map is completed when the tile
