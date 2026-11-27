@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    placeLabelsOnTrack, thinLabels, drawLabels, drawDefaultHud, drawTip, withAlpha, fitText, formatDistance, formatDuration, LABEL_REACH,
+    placeLabelsOnTrack, thinLabels, drawLabels, drawDefaultHud, drawTip, withAlpha, fitText, wrapText, formatDistance, formatDuration, LABEL_REACH,
     type HudFrame, type PlacedLabel, type FlyoverLabel,
 } from '../src/hud/hud.ts';
 import { readFileSync } from 'node:fs';
@@ -299,6 +299,23 @@ test('default HUD: long titles are shortened to fit, stats show moving time, not
     const c = fakeCtx();
     drawDefaultHud(c.ctx, frame({ title: '', subtitle: '', stats: { distance: 0, ascent: 0, elapsed: null, moving: null, elevation: NaN } }));
     assert.ok(!c.texts().some(t => t.includes('NaN')));
+});
+
+test('attribution: a long credit line is wrapped, never cut off or wider than the picture', () => {
+    const credit = 'Sources: Esri, HERE, Garmin, Intermap, increment P Corp., GEBCO, USGS, FAO, NPS, NRCAN, GeoBase, IGN, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), © OpenStreetMap contributors, GIS User Community · terén: AWS Terrain Tiles';
+    for (const width of [1080, 1920]) {
+        const { ctx, calls } = fakeCtx();
+        drawDefaultHud(ctx, frame({ width, attribution: credit }));
+        const drawn = calls.filter(c => c[0] === 'fillText' && credit.includes(c[1] as string) && (c[1] as string).length > 20).map(c => c[1] as string);
+        assert.equal(drawn.join(' '), credit, `${width}: every word is shown, in order`);
+        assert.ok(drawn.every(l => [...l].length * 10 <= width - 24), `${width}: ${drawn.map(l => l.length).join(', ')} chars`);
+        assert.ok(width === 1080 ? drawn.length >= 2 : drawn.length >= 1);
+    }
+    const m = { measureText: (t: string) => ({ width: [...t].length * 10 }) as TextMetrics };
+    assert.deepEqual(wrapText(m, 'krátké', 100), ['krátké']);
+    assert.deepEqual(wrapText(m, 'a b c d e f', 30), ['a b', 'c d', 'e f']);
+    assert.deepEqual(wrapText(m, 'nerozdělitelnéslovo x', 50), ['nerozdělitelnéslovo', 'x']);
+    assert.deepEqual(wrapText(m, '', 50), []);
 });
 
 test('colours: any CSS colour works for the tip glow (hex, short hex, names, rgb)', () => {

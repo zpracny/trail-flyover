@@ -1,14 +1,43 @@
 # Trail Flyover
 
+[![CI](https://github.com/zpracny/trail-flyover/actions/workflows/ci.yml/badge.svg)](https://github.com/zpracny/trail-flyover/actions/workflows/ci.yml)
+
 Plynulý 3D průlet nad GPS trasou: náhled v prohlížeči a export videa MP4/WebM pro sociální sítě.
 Komponenta nezávislá na frameworku, postavená na MapLibre GL. Je určená k použití v TrailMetrics i NaBrdy.
 
+![Průlet 3D a statický 2D pohled na celou trasu](docs/preview.jpg)
+
+## Požadavky
+
+- **Prohlížeč** s WebGL 2 a pro export videa s WebCodecs: Chrome, Edge, Firefox 130+, Safari 16.4+.
+- **Node.js 22.18 nebo novější**: testy a skripty běží přímo z TypeScriptu, bez překladu.
+- **Python 3** jen pro demo server (`npm run serve`).
+- Žádné API klíče ani proměnné prostředí: všechny vestavěné podklady jsou bez klíče.
+
+## Vyzkoušení
+
 ```
-npm install
+git clone https://github.com/zpracny/trail-flyover.git && cd trail-flyover
+npm ci
 npm run build && npm run serve      # demo na http://127.0.0.1:8811
-npm test                            # 79 testů za ~10 s (Node 22, bez dalších nástrojů); skutečný záznam 121 km a jeho 46km úsek
+npm run check                       # typy, linter (Biome) a testy
 npm run compare                     # srovnání plynulosti se současnou kamerou TrailMetrics
 ```
+
+Testy: 85 testů za ~10 s na skutečném záznamu 121 km, jeho 46km úseku a na umělých i náhodných
+trasách. Stejnou kontrolu spouští GitHub Actions u každého pushe.
+
+## Instalace do aplikace
+
+Balíček zatím není na npm. Instaluje se z GitHubu, `maplibre-gl` dodává aplikace:
+
+```
+npm install github:zpracny/trail-flyover maplibre-gl
+```
+
+Balíček obsahuje zdrojový TypeScript (`src/index.ts`), takže ho musí přeložit bundler aplikace.
+Ověřeno s esbuild (demo). Vite a Next.js (`transpilePackages: ['trail-flyover']` v `next.config`)
+by měly fungovat stejně, ale zatím jsem je nezkoušel.
 
 ## Proč je to plynulé
 
@@ -127,18 +156,30 @@ Komponenta pracuje s DOM a WebGL, takže v Next.js patří do client komponenty:
 
 ```tsx
 'use client';
+import { useEffect, useRef } from 'react';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { TrailFlyover, type TrackPoint } from 'trail-flyover';
+
 export function Flyover({ points, title }: { points: TrackPoint[]; title: string }) {
     const ref = useRef<HTMLDivElement>(null);
-    const fly = useRef<TrailFlyover>();
+    const fly = useRef<TrailFlyover | null>(null);
     useEffect(() => {
-        const f = new TrailFlyover(ref.current!, { maplibregl });
+        if (!ref.current) return;
+        const f = new TrailFlyover(ref.current, { maplibregl });
         fly.current = f;
-        void f.load(points, { title });
-        return () => f.destroy();
+        f.load(points, { title }).catch(err => console.error(err));
+        return () => {
+            f.destroy();
+            fly.current = null;
+        };
     }, [points, title]);
     return <div ref={ref} style={{ width: '100%', aspectRatio: '4 / 5' }} />;
 }
 ```
+
+`destroy()` je bezpečné zavolat i uprostřed `load()`, takže dvojí spuštění efektu ve vývojovém
+režimu Reactu nevadí.
 
 ## Tři režimy sdílení (a čtvrtý navíc)
 
@@ -203,9 +244,15 @@ ukáže upozornění. Není to právní rada, jen shrnutí podmínek, které jse
   videu. Nejčistší volba pro Česko.
 - **Esri**: podmínky pro statické mapy (snímky obrazovky a podobně) dovolují osobní užití
   a propagaci vlastních produktů s uvedením zdroje; pro „commercial monetization“ je potřeba
-  souhlas. Video ani sociální sítě výslovně nezmiňují. Nepodařilo se mi ověřit, jestli Esri pro
-  produkční aplikaci vyžaduje vlastní účet a API klíč (ArcGIS Location Platform); před nasazením
-  do TrailMetrics to stojí za kontrolu.
+  souhlas. Video ani sociální sítě výslovně nezmiňují. Vrstvy (World Imagery, World Topo Map) se
+  řídí licenční smlouvou Esri (Master License Agreement) a podle podmínek u položky nejsou určené
+  k exportu dlaždic pro offline použití; průběžné stahování při náhledu a exportu videa je
+  běžné zobrazení. Atribuce ve videu odpovídá tomu, co služby samy uvádějí.
+- **Esri v produkci (k ověření):** dokumentace pro vývojáře u současných služeb podkladů
+  (Basemap Styles, Static Basemap Tiles) vyžaduje účet ArcGIS Location Platform a přístupový
+  token. Adresy `server.arcgisonline.com`, které tu používám, v ní zmíněné nejsou. Pro veřejnou
+  aplikaci s mnoha uživateli (TrailMetrics) proto doporučuju účet a token a podklady předat jako
+  vlastní `BasemapDef` s `requiresKey`; kolik je zdarma, se mi z ceníku zjistit nepodařilo.
 - **Mapy.com mezi podklady záměrně nejsou.** Podmínky API (od 1. 6. 2025, čl. 4.6.2) zakazují
   dlaždice a výstupy ukládat, exportovat a sdílet a atribuce vyžaduje klikací logo nad mapou, což
   ve videu nejde. Export videa na sociální sítě by tak potřeboval písemný souhlas Seznamu.
@@ -214,6 +261,7 @@ ukáže upozornění. Není to právní rada, jen shrnutí podmínek, které jse
 Zdroje: [podmínky Mapy.com API](https://developer.mapy.com/terms-and-conditions/),
 [atribuce Mapy.com](https://developer.mapy.com/rest-api-mapy-cz/atribution/),
 [Esri – statické mapy](https://doc.esri.com/en/arcgis-online/latest/reference/static-maps.html),
+[Esri – Static Basemap Tiles](https://developers.arcgis.com/documentation/mapping-and-location-services/mapping/basemaps/introduction-static-basemap-tiles-service/),
 [ČÚZK – otevřená data](https://www.cuzk.gov.cz/Uvod/Produkty-a-sluzby/Otevrena-data/Otevrena-data-zakladni-informace.aspx).
 
 ### Zasněžená krajina
@@ -289,12 +337,19 @@ Trasa 51 km:
 - Export vyžaduje WebCodecs (Chrome, Edge, Firefox 130+, Safari 16.4+). MP4 s H.264 preferuje, jinak
   použije HEVC, AV1 nebo VP9.
 - Názvy míst: `fetchPlaceLabels` používá Overpass, který bývá přetížený. Aplikace s vlastními POI je
-  mají předávat přímo (`labels`).
+  mají předávat přímo (`labels`). Každý dotazovaný server dostane ohraničení trasy, tedy přibližně,
+  kde jízda byla. Výchozí servery: overpass-api.de (FOSSGIS, Německo), overpass.kumi.systems
+  (Švýcarsko), overpass.private.coffee (Rakousko); vlastní seznam jde předat v `endpoints`.
 - Na mobilech bude potřeba menší mezipaměť dlaždic a nejspíš i nižší rozlišení exportu.
 - Zimní filtr běží v hlavním vlákně. Přesun do Web Workeru by zrychlil první průchod u dlouhých tras.
 - U velmi dlouhých tras by pomohla proměnná rychlost: zpomalit v horách a u cíle, zrychlit na rovině.
 - Převod do TrailMetrics: nahradit `story3DCamera.ts` voláním `buildFlightPlan` a `Story3DEngine`
   přehrávačem s vlastním HUD.
+
+## Bezpečnost
+
+Knihovna nemá server ani účty. Co posílá ven a jak nahlásit zranitelnost, popisuje
+[SECURITY.md](SECURITY.md).
 
 ## Licence
 
@@ -303,7 +358,8 @@ Kód je pod licencí MIT (soubor `LICENSE`).
 - Závislosti: MapLibre GL JS (BSD-3-Clause), mediabunny (MPL-2.0).
 - Mapové dlaždice nejsou součástí projektu a řídí se podmínkami poskytovatelů (viz „Licence
   a sdílení videa“). Výškový model: AWS Terrain Tiles.
-- Názvy míst v `test/fixtures/*.places.json`: © přispěvatelé OpenStreetMap (ODbL).
+- Názvy míst v `test/fixtures/*.places.json`: © přispěvatelé OpenStreetMap (ODbL), viz
+  [test/fixtures/README.md](test/fixtures/README.md).
 - GPX soubor v `test/fixtures` je autorův vlastní záznam, přiložený jako testovací data. Kvůli
   soukromí začíná i končí kilometr od skutečného startu a cíle a datum je posunuté (časy dne
   jsou skutečné).

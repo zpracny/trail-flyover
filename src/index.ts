@@ -16,7 +16,7 @@ export { TrailFlyover } from './maplibre/player.ts';
 export type { TrailFlyoverOptions, LoadMeta, ExportOptions, HudRenderer } from './maplibre/player.ts';
 export { BASEMAPS, resolveBasemap } from './maplibre/basemaps.ts';
 export type { BasemapDef } from './maplibre/basemaps.ts';
-export { drawDefaultHud, drawLabels, drawTip, placeLabelsOnTrack, thinLabels, LABEL_REACH, withAlpha, fitText, formatDistance, formatDuration } from './hud/hud.ts';
+export { drawDefaultHud, drawLabels, drawTip, placeLabelsOnTrack, thinLabels, LABEL_REACH, withAlpha, fitText, wrapText, formatDistance, formatDuration } from './hud/hud.ts';
 export type { HudFrame, FlyoverLabel, PlacedLabel, LabelReach, LabelDrawOptions, ScreenPoint } from './hud/hud.ts';
 export { encodeVideo, canEncode } from './export/encode.ts';
 export type { VideoFormat, EncodedVideo } from './export/encode.ts';
