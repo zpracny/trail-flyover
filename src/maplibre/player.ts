@@ -1102,6 +1102,9 @@ export class TrailFlyover {
             showProfile: this.opts.elevationProfile === true,
             strings: this.strings(),
         };
+        // The tip goes under the labels: it passes right through the places, and drawn on top it
+        // covered letters of the name (a pill is opaque enough to keep the tip faintly visible).
+        if (tip) drawTip(ctx, tip, scale, c.accent);
         // Labels keep clear of the panels: a little inside the margins the track itself respects.
         const mg = this.margins();
         const bands = { top: Math.max(0, mg.top - 0.02), bottom: Math.max(0, mg.bottom - 0.05) };
@@ -1111,7 +1114,6 @@ export class TrailFlyover {
         drawLabels(ctx, this.labels, frame, tipS, plan.meta.camera === 'static'
             ? { maxLabels: 12, hold: 3.5, bands, size: this.opts.labelSize }
             : { detailRange: plan.meta.range, bands, lead: this.opts.labelLead ?? 1.2, size: this.opts.labelSize });
-        if (tip) drawTip(ctx, tip, scale, c.accent);
         if (this.opts.hud !== false) (this.opts.hud ?? drawDefaultHud)(ctx, frame);
     }
 }
