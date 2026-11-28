@@ -23,7 +23,6 @@ The first seconds of a video exported by the demo
 - **Place names** only for places the track really passes, appearing as the trail approaches them.
 - **No API keys.** Satellite, topographic and black-and-white basemaps work out of the box; an
   optional winter filter turns any of them snowy.
-
 - **Stops for photos, an elevation profile, coloured markers** for apps that tell a richer story.
 - **English by default**, Czech built in (`locale: 'cs'`), any text can be overridden.
 
@@ -45,7 +44,7 @@ npm run build:lib                   # the package apps install: dist/ (JavaScrip
 npm run compare                     # smoothness compared with a keyframe camera
 ```
 
-Tests: 99 tests in about 10 s, on a real 121 km recording, a 46 km section of it, and synthetic and
+Tests: 112 tests in about 10 s, on a real 121 km recording, a 46 km section of it, and synthetic and
 random tracks. GitHub Actions runs the same checks on every push.
 
 ## Install into an app
@@ -63,14 +62,38 @@ checksum in your lockfile. Installing straight from git also works
 Prefer the tarball on build servers: npm records a git install as `git+ssh://`, which needs an
 SSH key there.
 
-Verified: type-checking with TypeScript 5.7 (`moduleResolution: "bundler"`, strict or not),
-bundling with esbuild, importing the core in Node. Not tried yet: a full Next.js or Vite build.
-No `transpilePackages` should be needed, since the package ships compiled JavaScript.
+### Bundlers and frameworks
+
+Verified in November 2026 with trail-flyover 0.5.2 and MapLibre 6.20, each time on a fresh app:
+production build, the page in Chrome, the map loaded, a video exported.
+
+| | build | dev server |
+|---|---|---|
+| Next.js 16.4, Turbopack (`next build`) | ✅ | ✅ `next dev` |
+| Next.js 16.4, webpack (`next build --webpack`) | ✅ | — |
+| Vite 8.4 (`vite build`) | ✅ | ✅ `vite` |
+
+Also: type-checking with TypeScript 5.7 (`moduleResolution: "bundler"`, strict or not), esbuild,
+importing the core in Node. The author's app TrailMetrics runs it in a Next.js 16 app (webpack
+build) on Vercel. No `transpilePackages` or other bundler settings are
+needed: the package ships compiled JavaScript.
+
+**One step every MapLibre 6 app needs.** MapLibre 6 is ES modules only and loads its worker from
+the file next to its own, which a bundler moves and renames. Without the step below the map fails
+with "Worker failed to load". Tell MapLibre where the worker went, once, before the first map:
+
+```ts
+import * as maplibregl from 'maplibre-gl';
+maplibregl.setWorkerUrl(new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).toString());
+```
+
+Next.js (Turbopack and webpack) and Vite then ship the worker as a file of the app itself, so a
+Content Security Policy needs no `blob:` for it (see below). MapLibre 5 does not need this step.
 
 ## Usage
 
 ```ts
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';      // MapLibre 6 has no default export
 import { TrailFlyover, parseGpx } from 'trail-flyover';
 
 const fly = new TrailFlyover(element, {
@@ -90,6 +113,20 @@ const photo = await fly.exportImage();
 fly.on('time', t => …); fly.on('state', s => …);
 fly.destroy();
 ```
+
+### Video export
+
+`exportVideo({ format, fps, bitrate, onProgress, signal })` renders the flight frame by frame and
+returns `{ blob, mimeType, extension, codec, stats }`.
+
+- `format`: `'mp4'` (H.264, otherwise HEVC, AV1 or VP9) or `'webm'` (VP9, AV1, VP8).
+- `bitrate` in bits per second. The default is 0.2 bit per pixel per frame, between 6 and
+  24 Mbit/s: 12.4 Mbit/s for 1080×1920 at 30 fps, 8.7 Mbit/s for 1080×1350. A fast flight over
+  aerial imagery changes the whole picture in every frame, so a lower bitrate shows quickly as
+  blocky edges, also around the place names.
+- `signal` cancels the export (`AbortError`), as does `destroy()`.
+- `stats` says where the time went: `tiles` large means a slow network, `encode` large a slow
+  encoder (no hardware encoding).
 
 ### Calling it quickly and concurrently
 
@@ -202,9 +239,14 @@ The component works with the DOM and WebGL, so in Next.js it belongs in a client
 ```tsx
 'use client';
 import { useEffect, useRef } from 'react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { TrailFlyover, type TrackPoint } from 'trail-flyover';
+
+// MapLibre 6: where the bundler put the worker (see "Bundlers and frameworks").
+if (typeof window !== 'undefined') {
+    maplibregl.setWorkerUrl(new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).toString());
+}
 
 export function Flyover({ points, title }: { points: TrackPoint[]; title: string }) {
     const ref = useRef<HTMLDivElement>(null);
@@ -223,8 +265,39 @@ export function Flyover({ points, title }: { points: TrackPoint[]; title: string
 }
 ```
 
-`destroy()` is safe in the middle of `load()`, so React running the effect twice in development
-mode is not a problem.
+- This exact component, used from a server page, builds and runs in Next.js 16 as it is: the page
+  is prerendered on the server and the map starts in the browser.
+- `destroy()` is safe in the middle of `load()`, so React running the effect twice in development
+  mode is not a problem.
+- MapLibre and the player add about 400 kB (gzip) of JavaScript. To keep them out of the first
+  load of a page, load the component only when it is needed:
+  `const Flyover = dynamic(() => import('./Flyover').then(m => m.Flyover), { ssr: false })`.
+
+### Content Security Policy
+
+This policy was tested with a Next.js 16 build (satellite basemap, terrain, video export) and
+blocked nothing:
+
+```
+default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';
+worker-src 'self'; img-src 'self' data: blob:;
+connect-src 'self' https://server.arcgisonline.com https://s3.amazonaws.com https://tiles.openfreemap.org
+```
+
+- `worker-src 'self'` is enough once the worker URL is set as above.
+- `connect-src` lists the servers the map talks to. Tiles are downloaded with `fetch`, so they
+  belong there, not only in `img-src`. Add the hosts of the basemaps you offer:
+
+  | for | host |
+  |---|---|
+  | `esri-satellite`, `esri-satellite-bw`, `esri-topo`, `esri-light`, `esri-dark`; also `cuzk-ortofoto` (Esri beyond the border) | `https://server.arcgisonline.com` |
+  | `esri-wayback-2022` | `https://wayback.maptiles.arcgis.com` |
+  | `cuzk-ortofoto` | `https://ags.cuzk.gov.cz` |
+  | `opentopomap` | `https://a.tile.opentopomap.org` (also `b.`, `c.`) |
+  | terrain (always) | `https://s3.amazonaws.com` |
+  | `fetchPlaceLabels` | `https://tiles.openfreemap.org` (with `source: 'overpass'`: the Overpass servers) |
+
+- `script-src 'unsafe-inline'` is there for Next.js itself, not for the library.
 
 ## Three sharing modes (and a fourth)
 
@@ -261,7 +334,6 @@ each one appears as the tip of the trail approaches it.
   1.2 s (median 1.6 s), before only 0.4 s (median). `0` = appear exactly as the trail arrives.
 - **Size** (`labelSize`, default 1): names are 32 px bold at 1080 px output width. A 1080 px wide
   video on a phone screen is shown about 2.8× smaller, which brings that down to ~11 pt.
-
 - **Reach by kind of place** (`labelReach`, default `LABEL_REACH`): a town within 1,000 m (the
   point of a town is its centre and the track may pass along its edge), a village 400 m, a hamlet
   250 m, a peak 250 m, your own point (`kind: 'waypoint'`) 1,500 m. Pass one number for
@@ -281,8 +353,8 @@ each one appears as the tip of the trail approaches it.
   priority: 5 }`. With `priority` 4 or more a label is a landmark: never thinned out and kept in
   the overviews.
 
-On the Tolmin–Koper track (253 places from OpenStreetMap around it), 68 places are within reach;
-a 60 s fly-over shows 31 of them, the 24 s static view 19.
+On the Tolmin–Koper track (253 places from OpenStreetMap around it), 68 places are within reach.
+In version 0.2 a 60 s fly-over showed 31 of them and the 24 s static view 19.
 
 ### Place names from OpenStreetMap
 
@@ -401,8 +473,9 @@ basemap. The pixel conversion is a pure function, `snowifyPixels`, tested in Nod
 
 ## Why it is smooth
 
-A typical keyframe camera (the comparison baseline is the 3D fly-over of the author's app
-TrailMetrics, ported in `test/helpers/trailMetricsCamera.ts`) stutters for these reasons:
+A typical keyframe camera (the comparison baseline is the previous 3D fly-over of the author's app
+TrailMetrics, ported in `test/helpers/trailMetricsCamera.ts`; TrailMetrics now uses this library)
+stutters for these reasons:
 
 | Problem | Cause | Solution here |
 |---|---|---|
@@ -516,6 +589,9 @@ A 51 km track:
   otherwise HEVC, AV1 or VP9 is used.
 - Place names: peaks in vector tiles are thinned out by importance, so not every named peak is
   there. Apps with their own points of interest should pass them as `labels`.
+- Without hardware video encoding (common on Linux) the browser encodes H.264 in software:
+  measured 43–60 ms per 1080×1920 frame, so a 30 s video (900 frames) takes at least 40–55 s to
+  export, however fast the network. `video.stats.encode` shows it.
 - Mobile devices will need a smaller tile cache and probably a lower export resolution.
 - The winter filter runs on the main thread. Moving it to a Web Worker would speed up the first
   pass on long tracks.

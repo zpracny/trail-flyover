@@ -5,7 +5,7 @@
 [English](README.md) · **Česky**
 
 Plynulý 3D průlet nad GPS trasou: náhled v prohlížeči a export videa MP4/WebM pro sociální sítě.
-Komponenta nezávislá na frameworku, postavená na MapLibre GL. Je určená k použití v TrailMetrics i NaBrdy.
+Komponenta nezávislá na frameworku, postavená na MapLibre GL.
 
 **[▶ Vyzkoušej živé demo](https://zpracny.github.io/trail-flyover/)** s ukázkovou trasou nebo vlastním GPX.
 
@@ -13,6 +13,18 @@ Komponenta nezávislá na frameworku, postavená na MapLibre GL. Je určená k p
 
 Prvních pár sekund videa vyexportovaného z dema
 ([celé video, 24 s, MP4](https://github.com/zpracny/trail-flyover/releases/download/v0.2.2/trail-flyover-example.mp4)).
+
+- **Plynulé už z principu.** Kamera je čistá funkce času, spočítaná předem z převzorkované
+  a vyhlazené trasy. Žádné klíčové snímky, žádné čekání na mapu v každém snímku.
+- **Video je náhled.** Export vykreslí tentýž let snímek po snímku a počká na každou dlaždici,
+  takže nic není rozmazané ani nechybí, ať je let jakkoli rychlý.
+- **Tři režimy:** 3D průlet, 2D mapa, která jede s trasou, a statický pohled na celou trasu, kde
+  běží jen linka.
+- **Názvy míst** jen u míst, kterými trasa opravdu vede; objeví se, když se k nim linka blíží.
+- **Bez API klíčů.** Satelitní, turistické i černobílé podklady fungují hned; volitelný zimní filtr
+  kterýkoli z nich zasněží.
+- **Zastávky kvůli fotkám, graf převýšení, barevné značky** pro aplikace, které vyprávějí víc.
+- **Výchozí je angličtina**, čeština je vestavěná (`locale: 'cs'`), každý text jde přepsat.
 
 ## Požadavky
 
@@ -29,10 +41,10 @@ npm ci
 npm run build && npm run serve      # demo na http://127.0.0.1:8811
 npm run check                       # typy, linter (Biome) a testy
 npm run build:lib                   # balíček pro aplikace: dist/ (JavaScript a typové deklarace)
-npm run compare                     # srovnání plynulosti se současnou kamerou TrailMetrics
+npm run compare                     # plynulost ve srovnání s kamerou na klíčových snímcích
 ```
 
-Testy: 99 testů za ~10 s na skutečném záznamu 121 km, jeho 46km úseku a na umělých i náhodných
+Testy: 112 testů za ~10 s na skutečném záznamu 121 km, jeho 46km úseku a na umělých i náhodných
 trasách. Stejnou kontrolu spouští GitHub Actions u každého pushe.
 
 ## Instalace do aplikace
@@ -50,71 +62,38 @@ kontrolním součtem. Funguje i instalace přímo z gitu
 Na sestavovacích serverech je lepší balíček z vydání: instalaci z gitu npm zapíše jako
 `git+ssh://`, a ta tam potřebuje SSH klíč.
 
-Ověřeno: typová kontrola v TypeScriptu 5.7 (`moduleResolution: "bundler"`, se `strict` i bez),
-sestavení přes esbuild, import jádra v Node. Zatím nezkoušeno: úplné sestavení v Next.js nebo Vite.
-`transpilePackages` by nemělo být potřeba, balíček obsahuje přeložený JavaScript.
+### Bundlery a frameworky
 
-## Proč je to plynulé
+Ověřeno v listopadu 2026 s trail-flyover 0.5.2 a MapLibre 6.20, pokaždé na čisté aplikaci:
+produkční sestavení, stránka v Chrome, načtená mapa, vyexportované video.
 
-Současný 3D Fly-over v TrailMetrics (`components/StoryGenerator/story3DCamera.ts`) cuká ze tří důvodů:
-
-| Problém | Příčina | Řešení zde |
+| | sestavení | vývojový server |
 |---|---|---|
-| Otáčení pulzuje | směr se mezi 150 klíčovými snímky prolíná smoothstepem, takže úhlová rychlost klesne u každého snímku na nulu (~5× za sekundu) | žádné klíčové snímky: směr je tečna vyhlazené dráhy a v čase se ještě vyhladí s omezením na 32 °/s |
-| Dráha se láme | střed se mezi klíčovými snímky prokládá přímkami ze syrových GPS bodů | převzorkování po stejné vzdálenosti a Gaussovo vyhlazení bez zpoždění, okno úměrné vzdálenosti kamery |
-| Náhled seká | každý snímek čeká na `GeoJSONSource.setData` (worker, nepravidelná doba) | trasa je rozdělená na úseky odkrývané přes `feature-state` (synchronní), kamera a `map.redraw()` ve stejném snímku |
-| Kamera poskakuje | MapLibre bere výšku středu z právě načtených dlaždic terénu | výška kamery z vlastního, předem vyhlazeného DEM; `centerClampedToGround: false` |
+| Next.js 16.4, Turbopack (`next build`) | ✅ | ✅ `next dev` |
+| Next.js 16.4, webpack (`next build --webpack`) | ✅ | — |
+| Vite 8.4 (`vite build`) | ✅ | ✅ `vite` |
 
-Naměřeno `npm run compare` na skutečné trase z `test/fixtures`:
+Dále: typová kontrola v TypeScriptu 5.7 (`moduleResolution: "bundler"`, se `strict` i bez), esbuild,
+import jádra v Node. Autorova aplikace TrailMetrics ho používá v Next.js 16 (sestavení přes
+webpack) na Vercelu. `transpilePackages` ani jiné nastavení bundleru není potřeba: balíček
+obsahuje přeložený JavaScript.
 
-| trasa, video | max. zrychlení otáčení: TM nyní → nově | lom dráhy p99: TM nyní → nově |
-|---|---|---|
-| 121 km (Tolmin–Koper), 30 s | 358 → 16 °/s² | 29° → 1,0° za snímek |
-| 121 km (Tolmin–Koper), 60 s | 97 → 13 °/s² | 22° → 1,3° |
+**Jeden krok, který potřebuje každá aplikace s MapLibre 6.** MapLibre 6 je jen ES moduly a worker
+načítá ze souboru vedle sebe, jenže bundler soubory přesouvá a přejmenovává. Bez kroku níže mapa
+skončí chybou „Worker failed to load“. Jednou, před první mapou, řekni MapLibre, kam worker přišel:
 
-Úvod a závěr letí po křivce van Wijka a Nuije (princip `flyTo`): dlouhý přesun proběhne ve výšce
-a přiblížení až u cíle. Délka úvodu a závěru se řídí poměrem přiblížení (121km trasa: 119 km → 7,3 km
-dostane 6 s), aby logaritmické zrychlení přiblížení nepřesáhlo ~0,6 /s².
-
-**Čelo trasy zůstává v záběru.** Vyhlazená dráha kamery řeže zatáčky až o 0,2 vzdálenosti kamery.
-Ve formátu 9:16 je to víc než polovina šířky obrazu, takže čelo trasy dřív vyjíždělo až za okraj.
-Teď kamera v takovém místě plynule ustoupí do strany (čelo se drží do 58 % šířky) a v úzkém
-formátu letí o 30 % dál. Test to hlídá pro všechny trasy, kamery a poměry stran.
-
-**Přehled využívá celý obraz.** Úvodní a závěrečný záběr se běžně dívá ve směru jízdy. Když by ale
-protáhlá trasa ležela v obraze napříč (severojižní trasa ve formátu Story), natočí se kamera až
-o 90° tak, aby trasa byla co největší. Otočení se rozloží do celého úvodu nebo závěru.
-
-## Architektura
-
-```
-src/core/        čisté výpočty, bez DOM (testované v Node)
-  flightPlan.ts  trasa → plán letu: poseAt(t), distanceAt(t), statsAt(t)
-  geo.ts         projekce, převzorkování, Gaussovo vyhlazení, úhly
-  gpx.ts         čtení GPX (bez DOMParseru): body trasy, název, pojmenované waypointy
-  clean.ts       vyřazení chyb GPS (skoky, 0°/0°), trasy přes 180. poledník
-  terrarium.ts   synchronní DEM z dlaždic AWS Terrarium (zdarma, bez klíče)
-src/maplibre/
-  player.ts      TrailFlyover: náhled, přednačtení, export
-  basemaps.ts    mapové podklady jako data
-src/hud/hud.ts   štítky míst, čelo trasy, výchozí panel se statistikami
-src/effects/     zimní filtr (přebarvení dlaždic)
-src/export/      kódování snímek po snímku přes WebCodecs (mediabunny)
-src/extras/      názvy míst z OpenStreetMap (vektorové dlaždice nebo Overpass), volitelné
+```ts
+import * as maplibregl from 'maplibre-gl';
+maplibregl.setWorkerUrl(new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).toString());
 ```
 
-**Kamera je čistá funkce času.** Plán letu se spočítá jednou, pak `poseAt(t)` vrací polohu kamery
-a cíle. Náhled i export volají totéž, takže video vypadá přesně jako náhled.
-
-Let má tři fáze: úvodní přehled celé trasy, průlet za čelem trasy s plynulým rozjezdem a dojezdem
-a závěrečný přehled s mírným kroužením. Přehledy se počítají přesně: virtuální kamera promítne
-všechny body trasy a binárním hledáním se najde nejbližší vzdálenost, při které se trasa vejde mezi
-titulek a panel se statistikami. Tuhle vlastnost hlídá test pro všechny tři poměry stran.
+Next.js (Turbopack i webpack) a Vite pak worker vydají jako soubor samotné aplikace, takže
+Content Security Policy pro něj nepotřebuje `blob:` (viz níže). MapLibre 5 tento krok nepotřebuje.
 
 ## Použití
 
 ```ts
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';      // MapLibre 6 nemá výchozí export
 import { TrailFlyover, parseGpx } from 'trail-flyover';
 
 const fly = new TrailFlyover(element, {
@@ -136,6 +115,20 @@ fly.on('time', t => …); fly.on('state', s => …);
 fly.destroy();
 ```
 
+### Export videa
+
+`exportVideo({ format, fps, bitrate, onProgress, signal })` vykreslí let snímek po snímku a vrátí
+`{ blob, mimeType, extension, codec, stats }`.
+
+- `format`: `'mp4'` (H.264, jinak HEVC, AV1 nebo VP9) nebo `'webm'` (VP9, AV1, VP8).
+- `bitrate` v bitech za sekundu. Výchozí je 0,2 bitu na pixel a snímek, mezi 6 a 24 Mbit/s:
+  12,4 Mbit/s pro 1080×1920 při 30 fps, 8,7 Mbit/s pro 1080×1350. Rychlý let nad leteckým snímkem
+  mění v každém snímku celý obraz, takže nižší datový tok se rychle projeví kostičkovanými hranami,
+  i kolem názvů míst.
+- `signal` export zruší (`AbortError`), stejně jako `destroy()`.
+- `stats` řekne, kam šel čas: velké `tiles` znamená pomalou síť, velké `encode` pomalý enkodér
+  (bez hardwarového kódování).
+
 ### Chování při souběhu
 
 Přehrávač počítá s tím, že ho aplikace volá rychle za sebou (posuvníky, efekty v Reactu):
@@ -144,8 +137,8 @@ Přehrávač počítá s tím, že ho aplikace volá rychle za sebou (posuvníky
   trasa, starší volání se dokončí bez práce.
 - `update()` jde volat ještě během `load()`. Neplatná změna (neznámý podklad, chybějící klíč)
   skončí chybou a nic nezmění.
-- Během exportu a přednačítání `load()`, `update()` a další export skončí chybou „An export or prefetch is in progress…“.
-  `seek()` a `play()` se v té době ignorují.
+- Během exportu a přednačítání `load()`, `update()` a další export skončí chybou („An export or
+  prefetch is in progress…“). `seek()` a `play()` se v té době ignorují.
 - Během exportu a přednačítání ukazuje přehrávač stojící obraz z okamžiku spuštění: mapa pod ním
   skáče ze snímku na snímek a čeká na dlaždice, což by vypadalo trhaně. `stillWhileBusy: false`
   ukáže práci naživo.
@@ -159,10 +152,10 @@ Přehrávač počítá s tím, že ho aplikace volá rychle za sebou (posuvníky
 - Nedostupná nebo chybějící dlaždice nezpůsobí chybu `load()`. Mapa se dokreslí, jakmile dlaždice
   dorazí.
 
-### Vlastní HUD (TrailMetrics)
+### Vlastní HUD
 
-TrailMetrics má velké statistiky pro sociální sítě. Místo výchozího panelu předá vlastní funkci.
-Štítky míst a čelo trasy kreslí přehrávač dál:
+Aplikace s vlastním vzhledem předá místo výchozího panelu vlastní funkci. Štítky míst a čelo
+trasy kreslí přehrávač dál:
 
 ```ts
 new TrailFlyover(el, {
@@ -170,7 +163,7 @@ new TrailFlyover(el, {
     hud: (ctx, f) => {
         // f.width, f.height, f.scale (min(w,h)/1080), f.stats.distance / ascent / moving / elapsed,
         // f.total, f.progress, f.project(lon, lat) → bod v pixelech výstupu
-        drawTrailMetricsStats(ctx, f);
+        drawMyStats(ctx, f);
     },
 });
 ```
@@ -245,9 +238,14 @@ Komponenta pracuje s DOM a WebGL, takže v Next.js patří do client komponenty:
 ```tsx
 'use client';
 import { useEffect, useRef } from 'react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { TrailFlyover, type TrackPoint } from 'trail-flyover';
+
+// MapLibre 6: kam bundler dal worker (viz „Bundlery a frameworky“).
+if (typeof window !== 'undefined') {
+    maplibregl.setWorkerUrl(new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).toString());
+}
 
 export function Flyover({ points, title }: { points: TrackPoint[]; title: string }) {
     const ref = useRef<HTMLDivElement>(null);
@@ -266,12 +264,43 @@ export function Flyover({ points, title }: { points: TrackPoint[]; title: string
 }
 ```
 
-`destroy()` je bezpečné zavolat i uprostřed `load()`, takže dvojí spuštění efektu ve vývojovém
-režimu Reactu nevadí.
+- Přesně tahle komponenta, použitá ze serverové stránky, se v Next.js 16 sestaví a funguje tak,
+  jak je: stránka se předrenderuje na serveru a mapa se spustí v prohlížeči.
+- `destroy()` je bezpečné zavolat i uprostřed `load()`, takže dvojí spuštění efektu ve vývojovém
+  režimu Reactu nevadí.
+- MapLibre a přehrávač přidají asi 400 kB (gzip) JavaScriptu. Aby nebyly v prvním načtení
+  stránky, načti komponentu až ve chvíli, kdy je potřeba:
+  `const Flyover = dynamic(() => import('./Flyover').then(m => m.Flyover), { ssr: false })`.
+
+### Content Security Policy
+
+Tahle politika je vyzkoušená na sestavení v Next.js 16 (satelitní podklad, terén, export videa)
+a nic nezablokovala:
+
+```
+default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';
+worker-src 'self'; img-src 'self' data: blob:;
+connect-src 'self' https://server.arcgisonline.com https://s3.amazonaws.com https://tiles.openfreemap.org
+```
+
+- `worker-src 'self'` stačí, když je adresa workeru nastavená jako výše.
+- `connect-src` vyjmenuje servery, se kterými mapa mluví. Dlaždice se stahují přes `fetch`, takže
+  patří sem, nejen do `img-src`. Přidej servery podkladů, které nabízíš:
+
+  | pro | server |
+  |---|---|
+  | `esri-satellite`, `esri-satellite-bw`, `esri-topo`, `esri-light`, `esri-dark`; i `cuzk-ortofoto` (Esri za hranicí) | `https://server.arcgisonline.com` |
+  | `esri-wayback-2022` | `https://wayback.maptiles.arcgis.com` |
+  | `cuzk-ortofoto` | `https://ags.cuzk.gov.cz` |
+  | `opentopomap` | `https://a.tile.opentopomap.org` (i `b.`, `c.`) |
+  | terén (vždy) | `https://s3.amazonaws.com` |
+  | `fetchPlaceLabels` | `https://tiles.openfreemap.org` (se `source: 'overpass'`: servery Overpass) |
+
+- `script-src 'unsafe-inline'` je tam kvůli samotnému Next.js, ne kvůli knihovně.
 
 ## Tři režimy sdílení (a čtvrtý navíc)
 
-Odpovídají režimům sdílení trasy v TrailMetrics; liší se jen dvěma volbami.
+Liší se jen dvěma volbami.
 
 ![Průlet 3D a statický 2D pohled na celou trasu](docs/preview.jpg)
 
@@ -304,7 +333,6 @@ a každé se objeví, když se k němu čelo trasy blíží.
   dřív medián 0,4 s. `0` = objeví se přesně ve chvíli příjezdu.
 - **Velikost** (`labelSize`, výchozí 1): názvy mají 32 px tučně při šířce videa 1080 px. Video
   široké 1080 px se na telefonu zobrazí asi 2,8× menší, tedy zhruba 11 pt.
-
 - **Dosah podle druhu místa** (`labelReach`, výchozí `LABEL_REACH`): město do 1 000 m (bod města
   je jeho střed a trasa ho může míjet po okraji), vesnice 400 m, samota 250 m, vrchol 250 m,
   vlastní bod (`kind: 'waypoint'`) 1 500 m. Jde zadat jedno číslo pro všechno, nebo jen některé
@@ -323,8 +351,8 @@ a každé se objeví, když se k němu čelo trasy blíží.
   před názvem), např. `{ name: 'Sněžka', kind: 'peak', color: '#f97316', icon: '▲', priority: 5 }`.
   S `priority` 4 a víc je štítek orientační bod: nikdy se nevynechá a zůstává i v přehledech.
 
-Na trase Tolmin–Koper (253 míst z OpenStreetMap v okolí) zůstane v dosahu 68 míst;
-při 60s průletu se jich ukáže 31, při 24s statickém záběru 19.
+Na trase Tolmin–Koper (253 míst z OpenStreetMap v okolí) zůstane v dosahu 68 míst. Ve verzi 0.2
+se jich při 60s průletu ukázalo 31, při 24s statickém záběru 19.
 
 ### Názvy míst z OpenStreetMap
 
@@ -338,7 +366,7 @@ import { fetchPlaceLabels, PlaceLabelsError } from 'trail-flyover';
 
 let places;
 try {
-    places = await fetchPlaceLabels(points);
+    places = await fetchPlaceLabels(points, { language: 'cs' });
 } catch (err) {
     // Některé dlaždice selhaly i napodruhé; err.labels má, co daly ostatní.
     if (err instanceof PlaceLabelsError) places = err.labels; else throw err;
@@ -360,10 +388,13 @@ flyover.load(points, { labels: places });
 - Chyba nikdy nezapadne: dlaždice, která selže dvakrát, vyhodí `PlaceLabelsError` s `labels`
   (z dlaždic, které se načetly), `failedTiles` a `totalTiles`.
 - K videu patří atribuce `OPENFREEMAP_ATTRIBUTION` („OpenFreeMap © OpenMapTiles Data from
-  OpenStreetMap“). S Content Security Policy povolte `https://tiles.openfreemap.org` v `connect-src`.
+  OpenStreetMap“). S Content Security Policy povol `https://tiles.openfreemap.org` v `connect-src`.
 
 `fetchPlaceLabels(points, { source: 'overpass' })` (nebo `fetchOverpassPlaceLabels`) se místo
-toho ptá Overpass API, které bývá přetížené (odpověď za desítky sekund, nebo vůbec).
+toho ptá Overpass API. Každý dotazovaný server dostane ohraničení trasy. Výchozí servery jsou
+overpass-api.de (FOSSGIS, Německo), overpass.kumi.systems (Švýcarsko) a overpass.private.coffee
+(Rakousko); vlastní seznam jde předat v `endpoints`. Overpass bývá přetížený, odpovídá za desítky
+sekund, nebo vůbec. Aplikace s vlastními body zájmu je mají předat rovnou jako `labels`.
 
 ## Mapové podklady
 
@@ -379,7 +410,11 @@ toho ptá Overpass API, které bývá přetížené (odpověď za desítky sekun
 | `esri-dark` | tmavý podklad se stínováním terénu | ne | osobní, nevýdělečné | ✅ |
 
 Žádný vestavěný podklad nepotřebuje API klíč. Vlastní podklad s klíčem jde přidat přes
-`BasemapDef.requiresKey` a `apiKeys`.
+`BasemapDef.requiresKey` a `apiKeys`. Vlastní podklad je obyčejný objekt `BasemapDef` (URL dlaždic,
+atribuce, úpravy barev). Atribuci kreslí HUD i do videa. `background` je barva tam, kam dlaždice
+ještě nedorazila (rychlý průlet v náhledu); má být blízko barvě podkladu (u satelitu tmavá), aby
+mezera vypadala jako opar, ne jako světlá skvrna. Terén je vždy AWS Terrain Tiles (Terrarium,
+zdarma).
 
 ### Licence a sdílení videa (stav 11/2026)
 
@@ -397,8 +432,8 @@ ukáže upozornění. Není to právní rada, jen shrnutí podmínek, které jse
 - **Esri v produkci (k ověření):** dokumentace pro vývojáře u současných služeb podkladů
   (Basemap Styles, Static Basemap Tiles) vyžaduje účet ArcGIS Location Platform a přístupový
   token. Adresy `server.arcgisonline.com`, které tu používám, v ní zmíněné nejsou. Pro veřejnou
-  aplikaci s mnoha uživateli (TrailMetrics) proto doporučuju účet a token a podklady předat jako
-  vlastní `BasemapDef` s `requiresKey`; kolik je zdarma, se mi z ceníku zjistit nepodařilo.
+  aplikaci s mnoha uživateli proto doporučuju účet a token a podklady předat jako vlastní
+  `BasemapDef` s `requiresKey`; kolik je zdarma, se mi z ceníku zjistit nepodařilo.
 - **Mapy.com mezi podklady záměrně nejsou.** Podmínky API (od 1. 6. 2025, čl. 4.6.2) zakazují
   dlaždice a výstupy ukládat, exportovat a sdílet a atribuce vyžaduje klikací logo nad mapou, což
   ve videu nejde. Export videa na sociální sítě by tak potřeboval písemný souhlas Seznamu.
@@ -417,7 +452,8 @@ zimní Sentinel-2 má 10 m/px a chce registraci. Archiv Esri Wayback jsem proše
 (199 verzí). Zimní snímek má jen verze 2021–2022, a to jen místy.
 
 Proto je tu **zimní filtr** (`snow`), který zasněží libovolný podklad: louky, pole a střechy zbělají,
-lesy zůstanou tmavé s jinovatkou a voda tmavá. Volitelná sněhová čára podle DEM nechá údolí zelená:
+lesy zůstanou tmavé s jinovatkou a voda tmavá. Volitelná sněhová čára podle výškového modelu nechá
+údolí zelená:
 
 ```ts
 new TrailFlyover(el, { maplibregl, basemap: 'cuzk-ortofoto', snow: { snowline: 900 } });
@@ -427,25 +463,74 @@ fly.update({ snow: false });   // vypnout
 Funguje přes vlastní protokol v MapLibre (`addProtocol`), takže se dá zapnout nad kterýmkoli
 podkladem. Přepočet pixelů je čistá funkce `snowifyPixels`, otestovaná v Node.
 
-## 2D mapa
+## Proč je to plynulé
 
-Stejný plán letu funguje i na 2D mapě: `mode: '2d'` vypne terén a oblohu, kamera se dívá kolmo
-dolů, sever je nahoře (`flight.northUp`, lze vypnout pro otáčení po směru jízdy). S
-`flight.camera: 'static'` mapa stojí a běží jen linka (viz režimy výše). Plynulost, úvod
-a závěr, štítky, HUD i export zůstávají stejné. Jádro (`buildFlightPlan` s `preset: 'topdown'`) lze
-použít i bez přehrávače, třeba pro animaci trasy v interaktivní mapě NaBrdy přes `map.jumpTo` nebo
-pro 2D Story v TrailMetrics, který kreslí do canvasu.
+Běžná kamera na klíčových snímcích (srovnávací základ je předchozí 3D Fly-over autorovy aplikace
+TrailMetrics, převedený do `test/helpers/trailMetricsCamera.ts`; TrailMetrics teď používá tuto
+knihovnu) cuká z těchto důvodů:
 
-Vlastní podklad je obyčejný objekt `BasemapDef` (URL dlaždic, atribuce, úpravy barev). Atribuci
-kreslí HUD i do videa. `background` je barva tam, kam dlaždice ještě nedorazila (rychlý průlet
-v náhledu); má být blízko barvě podkladu (u satelitu tmavá), aby mezera vypadala jako opar, ne
-jako světlá skvrna.
-Terén je vždy AWS Terrain Tiles (Terrarium, zdarma).
+| Problém | Příčina | Řešení zde |
+|---|---|---|
+| Otáčení pulzuje | směr se mezi 150 klíčovými snímky prolíná smoothstepem, takže úhlová rychlost klesne u každého snímku na nulu (~5× za sekundu) | žádné klíčové snímky: směr je tečna vyhlazené dráhy a v čase se ještě vyhladí s omezením na 32 °/s |
+| Dráha se láme | střed se mezi klíčovými snímky prokládá přímkami ze syrových GPS bodů | převzorkování po stejné vzdálenosti a Gaussovo vyhlazení bez zpoždění, okno úměrné vzdálenosti kamery |
+| Náhled seká | každý snímek čeká na `GeoJSONSource.setData` (worker, nepravidelná doba) | trasa je rozdělená na úseky odkrývané přes `feature-state` (synchronní), kamera a `map.redraw()` ve stejném snímku |
+| Kamera poskakuje | MapLibre bere výšku středu z právě načtených dlaždic terénu | výška kamery z vlastního, předem vyhlazeného výškového modelu; `centerClampedToGround: false` |
+
+Naměřeno `npm run compare` na skutečné trase z `test/fixtures`:
+
+| trasa, video | max. zrychlení otáčení: klíčové snímky → zde | lom dráhy p99: klíčové snímky → zde |
+|---|---|---|
+| 121 km (Tolmin–Koper), 30 s | 358 → 16 °/s² | 29° → 1,0° za snímek |
+| 121 km (Tolmin–Koper), 60 s | 97 → 13 °/s² | 22° → 1,3° |
+
+Úvod a závěr letí po křivce van Wijka a Nuije (princip `flyTo`): dlouhý přesun proběhne ve výšce
+a přiblížení až u cíle. Délka úvodu a závěru se řídí poměrem přiblížení (121km trasa: 119 km → 7,3 km
+dostane 6 s), aby logaritmické zrychlení přiblížení nepřesáhlo ~0,6 /s².
+
+**Čelo trasy zůstává v záběru.** Vyhlazená dráha kamery řeže zatáčky až o 0,2 vzdálenosti kamery.
+Ve formátu 9:16 je to víc než polovina šířky obrazu, takže čelo trasy dřív vyjíždělo až za okraj.
+Teď kamera v takovém místě plynule ustoupí do strany (čelo se drží do 58 % šířky) a v úzkém
+formátu letí o 30 % dál. Test to hlídá pro všechny trasy, kamery a poměry stran.
+
+**Přehled využívá celý obraz.** Úvodní a závěrečný záběr se běžně dívá ve směru jízdy. Když by ale
+protáhlá trasa ležela v obraze napříč (severojižní trasa ve formátu Story), natočí se kamera až
+o 90° tak, aby trasa byla co největší. Otočení se rozloží do celého úvodu nebo závěru.
+
+## Architektura
+
+```
+src/core/        čisté výpočty, bez DOM (testované v Node)
+  flightPlan.ts  trasa → plán letu: poseAt(t), distanceAt(t), statsAt(t)
+  geo.ts         projekce, převzorkování, Gaussovo vyhlazení, úhly
+  gpx.ts         čtení GPX (bez DOMParseru): body trasy, název, pojmenované waypointy
+  clean.ts       vyřazení chyb GPS (skoky, 0°/0°), trasy přes 180. poledník
+  terrarium.ts   synchronní výškový model z dlaždic AWS Terrarium (zdarma, bez klíče)
+  urls.ts        odstranění query stringů (API klíčů) z chybových hlášek
+  i18n.ts        texty vestavěného panelu a stavových hlášek (en, cs)
+src/maplibre/
+  player.ts      TrailFlyover: náhled, přednačtení, export
+  basemaps.ts    mapové podklady jako data
+src/hud/hud.ts   štítky míst, čelo trasy, výchozí panel se statistikami
+src/effects/     zimní filtr (přebarvení dlaždic)
+src/export/      kódování snímek po snímku přes WebCodecs (mediabunny)
+src/extras/      názvy míst z OpenStreetMap (vektorové dlaždice nebo Overpass), volitelné
+```
+
+**Kamera je čistá funkce času.** Plán letu se spočítá jednou, pak `poseAt(t)` vrací polohu kamery
+a cíle. Náhled i export volají totéž, takže video vypadá přesně jako náhled.
+
+Let má tři fáze: úvodní přehled celé trasy, průlet za čelem trasy s plynulým rozjezdem a dojezdem
+a závěrečný přehled s mírným kroužením. Přehledy se počítají přesně: virtuální kamera promítne
+všechny body trasy a binárním hledáním se najde nejbližší vzdálenost, při které se trasa vejde mezi
+titulek a panel se statistikami. Tuhle vlastnost hlídá test pro všechny tři poměry stran.
+
+Jádro (`buildFlightPlan`, i s `preset: 'topdown'` pro 2D) jde použít bez přehrávače, třeba pro
+animaci trasy v interaktivní mapě přes `map.jumpTo`.
 
 ## Vstupní data
 
 - **Vzdálenost** je přesný součet původních bodů záznamu (ne vyhlazené dráhy), takže sedí s tím,
-  co ukazuje aplikace (u testovací trasy Tolmin–Koper 120,7 km).
+  co ukazuje aplikace, která jízdu nahrála (u testovací trasy Tolmin–Koper 120,7 km).
 - **Čas v pohybu** (`stats.moving`) vynechává zastávky; `stats.elapsed` je celkový čas záznamu.
   Tolmin–Koper: 7 h 11 min v pohybu z 9 h 08 min. Výchozí panel ukazuje čas v pohybu.
 - **Chyby GPS** se před výpočtem vyřadí: skok pryč a zpět rychlostí nad 180 km/h, bod 0°/0°,
@@ -453,6 +538,8 @@ Terén je vždy AWS Terrain Tiles (Terrarium, zdarma).
   (pozastavený záznam, vlak), zůstává. Bez časových značek se skoky neposuzují.
 - Trasy přes 180. poledník a na jižní i západní polokouli fungují (testováno).
 - Pojmenované waypointy z GPX (`parseGpx(...).waypoints`) jdou rovnou použít jako štítky.
+- Čtení GPX běží v lineárním čase na jakémkoli vstupu, takže poškozený nebo záměrně zlomyslný
+  soubor stránku nezamrazí.
 
 ## Výkon (naměřeno na Intel Iris Xe, náhled 720×900)
 
@@ -475,9 +562,10 @@ Trasa 51 km:
   pomalejší.
 - Export 1080×1350, 30 fps, 37,6 s: 84 s renderování, H.264 High, ~8,6 Mbit/s, bez zdvojených snímků.
   Každý snímek čeká na všechny dlaždice, takže video není rozmazané ani při rychlém letu.
-- Export trasy Tolmin–Koper (před oříznutím testovacího souboru, 124 km) 1080×1920, 30 fps, 60 s (1 801 snímků): 106 s, H.264 High, 12,4 Mbit/s,
-  93 MB, žádný zamrzlý snímek. Čekání na dlaždice už nestojí pevných 60 ms na snímek: když nic
-  nechybí, pokračuje se hned. Ověřeno na 140 skocích kamery, ani jednou nezůstala dlaždice nenačtená.
+- Export trasy Tolmin–Koper (před oříznutím testovacího souboru, 124 km) 1080×1920, 30 fps, 60 s
+  (1 801 snímků): 106 s, H.264 High, 12,4 Mbit/s, 93 MB, žádný zamrzlý snímek. Čekání na dlaždice
+  už nestojí pevných 60 ms na snímek: když nic nechybí, pokračuje se hned. Ověřeno na 140 skocích
+  kamery, ani jednou nezůstala dlaždice nenačtená.
 - Náhled trasy Tolmin–Koper (4:5, dlaždice už v mezipaměti prohlížeče): 62 fps, 5,7 % snímků nad 25 ms.
 
 ## Omezení a další kroky
@@ -485,14 +573,13 @@ Trasa 51 km:
 - Export vyžaduje WebCodecs (Chrome, Edge, Firefox 130+, Safari 16.4+). MP4 s H.264 preferuje, jinak
   použije HEVC, AV1 nebo VP9.
 - Názvy míst: vrcholy jsou v dlaždicích proředěné podle významu, nejsou úplné. Aplikace s vlastními
-  POI je mají předávat přímo (`labels`). U Overpassu dostane každý dotazovaný server ohraničení
-  trasy. Výchozí servery: overpass-api.de (FOSSGIS, Německo), overpass.kumi.systems (Švýcarsko),
-  overpass.private.coffee (Rakousko); vlastní seznam jde předat v `endpoints`.
+  body zájmu je mají předávat přímo (`labels`).
+- Bez hardwarového kódování videa (na Linuxu časté) kóduje prohlížeč H.264 softwarově: naměřeno
+  43–60 ms na snímek 1080×1920, takže export 30s videa (900 snímků) trvá aspoň 40–55 s, ať je síť
+  jakkoli rychlá. Ukáže to `video.stats.encode`.
 - Na mobilech bude potřeba menší mezipaměť dlaždic a nejspíš i nižší rozlišení exportu.
 - Zimní filtr běží v hlavním vlákně. Přesun do Web Workeru by zrychlil první průchod u dlouhých tras.
 - U velmi dlouhých tras by pomohla proměnná rychlost: zpomalit v horách a u cíle, zrychlit na rovině.
-- Převod do TrailMetrics: nahradit `story3DCamera.ts` voláním `buildFlightPlan` a `Story3DEngine`
-  přehrávačem s vlastním HUD.
 
 ## Jak přispět
 
